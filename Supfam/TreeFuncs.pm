@@ -544,37 +544,42 @@ sub FindTrueRoot($$) {
 						
 			@CurrentGenChildren = ($CurrentGenParent->each_Descendent);
 			
-			my $IntersectionsDescendentsIngroup = [];
+			my $IntersectionsDescendentsIngroupSize = [];
 			
 			### Calculate the overlap of several instances two sets - descendants of the first child of the parent of current node and the ingroup and the decendents of the second child ...		
 			foreach my $child (@CurrentGenChildren){
 				
 				my $ChildLeafDescendents = [grep{$_->is_Leaf}($child->get_all_Descendents)];
-				my ($UnionChildIngroup,$IntersectionIngroup,$IngroupExclusive,$ChildDescendentExclusive) = IntUnDiff($Ingroup,$ChildLeafDescendents);
+				my (undef,$IntersectionIngroup,undef,undef) = IntUnDiff($Ingroup,$ChildLeafDescendents);
 			
-				push(@$IntersectionsDescendentsIngroup,scalar($IntersectionIngroup));
+				push(@$IntersectionsDescendentsIngroupSize,scalar($IntersectionIngroup));
 			}
 			
 			
 			my $NextGenDesc;
 			## Choose which child node to use as next gen parent (we are moving down theough the tree using a geedy algorithm)
 			
-			my $index = -1;
+			my $index = 0;
 			my $MaxVal = 0;
 			my $MaxValIndex = undef;
 			
-			while(my $item = $$IntersectionsDescendentsIngroup[$index++]){
+			print scalar(@$IntersectionsDescendentsIngroupSize);
+			print "\n";
+			
+			foreach my $item (@$IntersectionsDescendentsIngroupSize){
 				
 				if ($item > $MaxVal){
 					
 					$MaxVal = $item;
 					$MaxValIndex = $index;
 				}
+				
+				$index++;
 			}
 			
-			my $NumberOfMaxVals = grep{$_ == $MaxVal}@$IntersectionsDescendentsIngroup;
+			my $NumberOfMaxVals = grep{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
 			
-			if($NumberOfMaxVals > 1){
+			if($NumberOfMaxVals != 1){
 				
 				my $GenChildIds = join(',',map{$_->id}@CurrentGenChildren);
 				die "Poor choice of outgroup! At one node ($CurrentGenParent    $GenChildIds) there are qually as many ingroup nodes in two (or more if non binary) children\n";
