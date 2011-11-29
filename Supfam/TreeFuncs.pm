@@ -547,7 +547,7 @@ sub FindTrueRoot($$) {
 			my $IntersectionsDescendentsIngroupSize = [];
 			
 			### Calculate the overlap of several instances two sets - descendants of the first child of the parent of current node and the ingroup and the decendents of the second child ...		
-			foreach my $child (@CurrentGenChildren){
+			foreach my $child ($CurrentGenChildren[0],$CurrentGenChildren[1]){
 				
 				my $ChildLeafDescendents = [grep{$_->is_Leaf}($child->get_all_Descendents)];
 				my (undef,$IntersectionIngroup,undef,undef) = IntUnDiff($Ingroup,$ChildLeafDescendents);
@@ -555,46 +555,24 @@ sub FindTrueRoot($$) {
 				push(@$IntersectionsDescendentsIngroupSize,scalar($IntersectionIngroup));
 			}
 			
+			use List::Util qw( max );
+			use List::MoreUtils qw( first_index );
 			
-			my $NextGenDesc;
-			## Choose which child node to use as next gen parent (we are moving down theough the tree using a geedy algorithm)
+			my $MaxVal = max(@$IntersectionsDescendentsIngroupSize);		
+			my $MaxValIndex = first_index{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
 			
-			my $index = 0;
-			my $MaxVal = 0;
-			my $MaxValIndex = undef;
+			my $NumberOfMaxVals =()= grep{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
 			
-			print scalar(@$IntersectionsDescendentsIngroupSize);
-			print "\n";
+			my $GenChildIds = join(',',map{$_->id}@CurrentGenChildren); die "Poor choice of outgroup! At one node ($CurrentGenParent $GenChildIds) there are equally as many ingroup nodes in two (or more if non binary) children\n" if($NumberOfMaxVals != 1);
 			
-			foreach my $item (@$IntersectionsDescendentsIngroupSize){
-				
-				if ($item > $MaxVal){
-					
-					$MaxVal = $item;
-					$MaxValIndex = $index;
-				}
-				
-				$index++;
-			}
+			my $NextGenParent = $CurrentGenChildren[$MaxValIndex];
 			
-			my $NumberOfMaxVals = grep{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
+			my $NextGenDescs = [grep{$_->is_Leaf}($NextGenParent->get_all_Descendents)];
 			
-			if($NumberOfMaxVals != 1){
-				
-				my $GenChildIds = join(',',map{$_->id}@CurrentGenChildren);
-				die "Poor choice of outgroup! At one node ($CurrentGenParent    $GenChildIds) there are qually as many ingroup nodes in two (or more if non binary) children\n";
-			}elsif($MaxValIndex ~~ undef){
-				
-				die "Error with script - algorithm coudln't find find next node\n";
-				
-			}
-			
-			$CurrentGenParent = $CurrentGenChildren[$MaxValIndex];
-			
-			$NextGenDesc = [grep{$_->is_Leaf}($CurrentGenParent->get_all_Descendents)];
-			
-			my ($UnionNextGenOutgroup,$IntersectionNextGenOutgroup,$NextGenExclusive,$OutgroupExclusive) = IntUnDiff($NextGenDesc,$OutgroupNodeIDs);
+			my ($UnionNextGenOutgroup,$IntersectionNextGenOutgroup,$NextGenExclusive,$OutgroupExclusive) = IntUnDiff($NextGenDescs,$OutgroupNodeIDs);
 			$ExitFlag = 1 unless(scalar(@$IntersectionNextGenOutgroup)); #If there are no members of the out group in the descendents list, we have our root! 
+			
+			$CurrentGenParent = $NextGenParent;
 		}
 
 		$tree->reroot_at_midpoint($CurrentGenParent);
