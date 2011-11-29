@@ -514,81 +514,99 @@ sub FindTrueRoot($$) {
 	
 	my ($tree,$OutgroupNodeIDs) = @_;
 	
-	$tree->reroot($$OutgroupNodeIDs[rand(scalar(@$OutgroupNodeIDs))]); #Reroot trree on a random outgroup node. It doesn't really matter which one
-	
 	my $TreeLeaves = [($tree->get_leaf_nodes)];
-	my ($Union,$Intersection,$Ingroup,$OutgroupExclusive) = IntUnDiff($TreeLeaves,$OutgroupNodeIDs);
-	
-#	die "Outgroup not wholly contained within tree taxa!\n" if (scalar(@$OutgroupExclusive)); # $OutgroupExclusive shoudl be empty!
-	
-	my $ExitFlag = 0; #While loop below will exit when a node is found with only ingroup descndents (note that descendents has a wierd meaning here as we have rooted the tree on a leaf)
+	my (undef,undef,$Ingroup,$OutgroupExclusive) = IntUnDiff($TreeLeaves,$OutgroupNodeIDs);
 	
 	my $root = $tree->get_root_node;
-	my @rootdescendents = $root->each_Descendent;
-	my $CurrentGenParent = $rootdescendents[0]; #As this is rooted on a leaf, there is only one descendent
-	my ($NextGenParent,@CurrentGenChildren);
-	
-	#Test if input tree is rooted or unrooted: if rooted, then node will have exactly two descendents (as it's rooted at a midpoint). If unrooted, then it will have more or 1 (if it's a leaf)
-	
-	my $RootedTest = (scalar(@rootdescendents) == 2)?1:0;
-	
-	while (! $ExitFlag){
-
-		@CurrentGenChildren = ($CurrentGenParent->each_Descendent);
-		
-		### Calculate the overlap of two pairs of two sets - descndants of the first child of this parent node and the ingroup and the decendents of the second child ...		
-						
-		my $FirstChildLeafDescendents = [grep{$_->is_Leaf}(($CurrentGenChildren[0])->get_all_Descendents)];
-		my ($UnionFirstIngroup,$IntersectionFirstIngroup,$IngroupExclusiveFirst,$FirstChildExclusive) = IntUnDiff($Ingroup,$FirstChildLeafDescendents);
-		
-		my $SecondChildLeafDescendents = [grep{$_->is_Leaf}(($CurrentGenChildren[1])->get_all_Descendents)];
-		my ($UnionSecondIngroup,$IntersectionSecondIngroup,$IngroupExclusiveSecond,$SecondChildExclusive) = IntUnDiff($Ingroup,$SecondChildLeafDescendents);
-		
-		###
-		my $NextGenDesc;
-		## Choose which child node to use as next gen parent (we are moving down theough the tree using a geedy algorithm)
-		
-		if(scalar(@$IntersectionFirstIngroup) > scalar(@$IntersectionSecondIngroup)){
-			
-			$NextGenParent = $CurrentGenChildren[0];
-			$NextGenDesc = $FirstChildLeafDescendents;
-			
-		}elsif(scalar(@$IntersectionFirstIngroup) < scalar(@$IntersectionSecondIngroup)){
-			
-			$NextGenParent = $CurrentGenChildren[1];
-			$NextGenDesc = $SecondChildLeafDescendents;
-		}else{
-			
-			die "Poor choice of outgroup! At one node ($CurrentGenParent) there are qually as many ingroup nodes in either child\n";
-		}	
-		#Test for overlap of next gen descendents with the outgroup - if there are no members then we have found our root.
-		
-		$CurrentGenParent = $NextGenParent;
-		
-		my ($UnionNextGenOutgroup,$IntersectionNextGenOutgroup,$NextGenExclusive,$OutgroupExclusive) = IntUnDiff($NextGenDesc,$OutgroupNodeIDs);
-		$ExitFlag = 1 unless(scalar(@$IntersectionNextGenOutgroup)); #If there are no members of the out group in the descendents list, we have our root! 
-		
-	}
 	
 	my $OldRoot = $root;
+	$OldRoot->id('##1234ROOT5678##'); # Gives the current Root of the tree an arbitary unique string. This method will fail if you have another node called this
+	my @rootdescendents = $root->each_Descendent;
+	my $RootedTest = (scalar(@rootdescendents) == 2)?1:0;
+	#Test if input tree is rooted or unrooted: if rooted, then node will have exactly two descendents (as it's rooted at a midpoint). If unrooted, then it will have more or 1 (if it's a leaf)
+
+	die "Outgroup not wholly contained within tree taxa!\n" if (scalar(@$OutgroupExclusive)); # $OutgroupExclusive should be empty!
 	
-	print map{$_->id}($NextGenParent->each_Descendent);
-	print "\n";
-	print $root->id;
-	print "\n";
+	unless(scalar(@$OutgroupNodeIDs) == 1){
+		
+		$tree->reroot($$OutgroupNodeIDs[rand(scalar(@$OutgroupNodeIDs))]); #Reroot tree on a random outgroup node. It doesn't really matter which one
+		$tree->splice(-remove_id => ['##1234ROOT5678##'], -preserve_lengths => 1) if ($RootedTest); #Remove the old root node (with arbitary id tag of ##1234ROOT5678##) if the tree was previously binary rooted as it is now useless
 	
-	$tree->reroot_at_midpoint($NextGenParent);
+		$root = $tree->get_root_node; #This will be the root node that we have just rooted the tree on
+		@rootdescendents = $root->each_Descendent;
+		
+		my $CurrentGenParent = $rootdescendents[0]; #As this is rooted on a leaf, there is only one descendent
+		my ($NextGenParent,@CurrentGenChildren);
 	
-	$tree->splice(-remove_id => [$OldRoot], -preserve_lengths => 1) if ($RootedTest); #Remove the old root node if the tree was rooted as it is now useless
+		my $ExitFlag = 0; #While loop below will exit when a node is found with only ingroup descndents (note that descendents has a wierd meaning here as we have rooted the tree on a leaf)
+		
+		while (! $ExitFlag){
 	
-	print STDERR "Rerooted tree\n" if ($RootedTest); 
+			@CurrentGenChildren = ($CurrentGenParent->each_Descendent);
+			
+			### Calculate the overlap of two pairs of two sets - descendants of the first child of the parent of current node and the ingroup and the decendents of the second child ...		
+
+			my $FirstChildLeafDescendents = [grep{$_->is_Leaf}(($CurrentGenChildren[0])->get_all_Descendents)];
+			my ($UnionFirstIngroup,$IntersectionFirstIngroup,$IngroupExclusiveFirst,$FirstChildExclusive) = IntUnDiff($Ingroup,$FirstChildLeafDescendents);
+
+			my $SecondChildLeafDescendents = [grep{$_->is_Leaf}(($CurrentGenChildren[1])->get_all_Descendents)];
+			my ($UnionSecondIngroup,$IntersectionSecondIngroup,$IngroupExclusiveSecond,$SecondChildExclusive) = IntUnDiff($Ingroup,$SecondChildLeafDescendents);
+			
+			###
+			my $NextGenDesc;
+			## Choose which child node to use as next gen parent (we are moving down theough the tree using a geedy algorithm)
+			
+			if(scalar(@$IntersectionFirstIngroup) > scalar(@$IntersectionSecondIngroup)){
+				
+				$NextGenParent = $CurrentGenChildren[0];
+				$NextGenDesc = $FirstChildLeafDescendents;
+				
+			}elsif(scalar(@$IntersectionFirstIngroup) < scalar(@$IntersectionSecondIngroup)){
+				
+				$NextGenParent = $CurrentGenChildren[1];
+				$NextGenDesc = $SecondChildLeafDescendents;
+			}else{
+				
+				die "Poor choice of outgroup! At one node ($CurrentGenParent) there are qually as many ingroup nodes in either child\n";
+			}	
+			#Test for overlap of next gen descendents with the outgroup - if there are no members then we have found our root.
+			
+			$CurrentGenParent = $NextGenParent;
+			
+			my ($UnionNextGenOutgroup,$IntersectionNextGenOutgroup,$NextGenExclusive,$OutgroupExclusive) = IntUnDiff($NextGenDesc,$OutgroupNodeIDs);
+			$ExitFlag = 1 unless(scalar(@$IntersectionNextGenOutgroup)); #If there are no members of the out group in the descendents list, we have our root! 
+			
+		}
 	
-	return(1);
+		$tree->reroot_at_midpoint($NextGenParent);
+					
+	}else{
+		
+		my $NewRootChild = $$OutgroupNodeIDs[0] ;
+		$tree->reroot_at_midpoint($NewRootChild);
+		$tree->splice(-remove_id => ['##1234ROOT5678##'], -preserve_lengths => 1) if ($RootedTest); #Remove the old root node (with arbitary id tag of ##1234ROOT5678##) if the tree was previously binary rooted as it is now useless
+	}
+
+	return($tree);
 }
 
 =pod
 =item * FindTrueRoot(BioPerl TreeObject, Array Pointer To Outgroup BioPerl Node IDs)
-A function that will reroot a tree given an outgroup array of bioperl nodeIDs.
+
+A function that will reroot a tree given an outgroup array of bioperl nodeIDs. Note, if any of your nodes are labelled '##1234ROOT5678##', then this sub will fail to remove the old root when rerooting a binary rooted tree.
+
+Returns a bioperl tree object of the rerooted tree.
+
+A note on the algorithm used:
+
+If the outgroup has only one node in, then we are done! Root at the midpoint between the leaf and it's ancestor (unless it's already the root) and remove the old root if it was a midpoint rooted tree beforehand
+
+Else:
+For the sake of ease, root the tree on an arbitary leaf node from the out group. Move to it's descendent (or ancestor, depending which way you think of the tree) and ask 'which of the two descendents from here posses more of the ingroup'
+Move along this edge to the next node. Recurse until we find a branch which has no outgroup on the other side.
+
+Only works on a bianry tree at present
+
 =cut
 
 sub TreeIntersection($$$){
