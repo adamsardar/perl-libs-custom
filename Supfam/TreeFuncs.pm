@@ -533,12 +533,12 @@ sub FindTrueRoot($$) {
 		$tree->splice(-remove_id => ['##1234ROOT5678##'], -preserve_lengths => 1) if ($RootedTest); #Remove the old root node (with arbitary id tag of ##1234ROOT5678##) if the tree was previously binary rooted as it is now useless
 	
 		$root = $tree->get_root_node; #This will be the root node that we have just rooted the tree on
-		@rootdescendents = $root->each_Descendent;
 		
-		my $CurrentGenParent = $rootdescendents[0]; #As this is rooted on a leaf, there is only one descendent
+		my $CurrentGenParent = $root; #As this is rooted on a leaf, there is only one descendent
 		my @CurrentGenChildren;
 	
 		my $ExitFlag = 0; #While loop below will exit when a node is found with only ingroup descndents (note that descendents has a wierd meaning here as we have rooted the tree on a leaf)
+		my $NextGenParent;
 		
 		while (! $ExitFlag){
 						
@@ -547,12 +547,12 @@ sub FindTrueRoot($$) {
 			my $IntersectionsDescendentsIngroupSize = [];
 			
 			### Calculate the overlap of several instances two sets - descendants of the first child of the parent of current node and the ingroup and the decendents of the second child ...		
-			foreach my $child ($CurrentGenChildren[0],$CurrentGenChildren[1]){
+			foreach my $child (@CurrentGenChildren){
 				
 				my $ChildLeafDescendents = [grep{$_->is_Leaf}($child->get_all_Descendents)];
 				my (undef,$IntersectionIngroup,undef,undef) = IntUnDiff($Ingroup,$ChildLeafDescendents);
 			
-				push(@$IntersectionsDescendentsIngroupSize,scalar($IntersectionIngroup));
+				push(@$IntersectionsDescendentsIngroupSize,scalar(@$IntersectionIngroup));
 			}
 			
 			use List::Util qw( max );
@@ -561,15 +561,15 @@ sub FindTrueRoot($$) {
 			my $MaxVal = max(@$IntersectionsDescendentsIngroupSize);		
 			my $MaxValIndex = first_index{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
 			
+			$NextGenParent = $CurrentGenChildren[$MaxValIndex];
+			
 			my $NumberOfMaxVals =()= grep{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
 			
 			my $GenChildIds = join(',',map{$_->id}@CurrentGenChildren); die "Poor choice of outgroup! At one node ($CurrentGenParent $GenChildIds) there are equally as many ingroup nodes in two (or more if non binary) children\n" if($NumberOfMaxVals != 1);
 			
-			my $NextGenParent = $CurrentGenChildren[$MaxValIndex];
+			my $NextGenDescs = [($NextGenParent->get_all_Descendents)];
 			
-			my $NextGenDescs = [grep{$_->is_Leaf}($NextGenParent->get_all_Descendents)];
-			
-			my ($UnionNextGenOutgroup,$IntersectionNextGenOutgroup,$NextGenExclusive,$OutgroupExclusive) = IntUnDiff($NextGenDescs,$OutgroupNodeIDs);
+			my (undef,$IntersectionNextGenOutgroup,undef,undef) = IntUnDiff($NextGenDescs,$OutgroupNodeIDs);
 			$ExitFlag = 1 unless(scalar(@$IntersectionNextGenOutgroup)); #If there are no members of the out group in the descendents list, we have our root! 
 			
 			$CurrentGenParent = $NextGenParent;
