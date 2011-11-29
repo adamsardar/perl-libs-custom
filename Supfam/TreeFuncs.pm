@@ -536,49 +536,63 @@ sub FindTrueRoot($$) {
 		@rootdescendents = $root->each_Descendent;
 		
 		my $CurrentGenParent = $rootdescendents[0]; #As this is rooted on a leaf, there is only one descendent
-		my ($NextGenParent,@CurrentGenChildren);
+		my @CurrentGenChildren;
 	
 		my $ExitFlag = 0; #While loop below will exit when a node is found with only ingroup descndents (note that descendents has a wierd meaning here as we have rooted the tree on a leaf)
 		
 		while (! $ExitFlag){
-	
+						
 			@CurrentGenChildren = ($CurrentGenParent->each_Descendent);
 			
-			### Calculate the overlap of two pairs of two sets - descendants of the first child of the parent of current node and the ingroup and the decendents of the second child ...		
-
-			my $FirstChildLeafDescendents = [grep{$_->is_Leaf}(($CurrentGenChildren[0])->get_all_Descendents)];
-			my ($UnionFirstIngroup,$IntersectionFirstIngroup,$IngroupExclusiveFirst,$FirstChildExclusive) = IntUnDiff($Ingroup,$FirstChildLeafDescendents);
-
-			my $SecondChildLeafDescendents = [grep{$_->is_Leaf}(($CurrentGenChildren[1])->get_all_Descendents)];
-			my ($UnionSecondIngroup,$IntersectionSecondIngroup,$IngroupExclusiveSecond,$SecondChildExclusive) = IntUnDiff($Ingroup,$SecondChildLeafDescendents);
+			my $IntersectionsDescendentsIngroup = [];
 			
-			###
+			### Calculate the overlap of several instances two sets - descendants of the first child of the parent of current node and the ingroup and the decendents of the second child ...		
+			foreach my $child (@CurrentGenChildren){
+				
+				my $ChildLeafDescendents = [grep{$_->is_Leaf}($child->get_all_Descendents)];
+				my ($UnionChildIngroup,$IntersectionIngroup,$IngroupExclusive,$ChildDescendentExclusive) = IntUnDiff($Ingroup,$ChildLeafDescendents);
+			
+				push(@$IntersectionsDescendentsIngroup,scalar($IntersectionIngroup));
+			}
+			
+			
 			my $NextGenDesc;
 			## Choose which child node to use as next gen parent (we are moving down theough the tree using a geedy algorithm)
 			
-			if(scalar(@$IntersectionFirstIngroup) > scalar(@$IntersectionSecondIngroup)){
-				
-				$NextGenParent = $CurrentGenChildren[0];
-				$NextGenDesc = $FirstChildLeafDescendents;
-				
-			}elsif(scalar(@$IntersectionFirstIngroup) < scalar(@$IntersectionSecondIngroup)){
-				
-				$NextGenParent = $CurrentGenChildren[1];
-				$NextGenDesc = $SecondChildLeafDescendents;
-			}else{
-				
-				die "Poor choice of outgroup! At one node ($CurrentGenParent) there are qually as many ingroup nodes in either child\n";
-			}	
-			#Test for overlap of next gen descendents with the outgroup - if there are no members then we have found our root.
+			my $index = -1;
+			my $MaxVal = 0;
+			my $MaxValIndex = undef;
 			
-			$CurrentGenParent = $NextGenParent;
+			while(my $item = $$IntersectionsDescendentsIngroup[$index++]){
+				
+				if ($item > $MaxVal){
+					
+					$MaxVal = $item;
+					$MaxValIndex = $index;
+				}
+			}
+			
+			my $NumberOfMaxVals = grep{$_ == $MaxVal}@$IntersectionsDescendentsIngroup;
+			
+			if($NumberOfMaxVals > 1){
+				
+				my $GenChildIds = join(',',map{$_->id}@CurrentGenChildren);
+				die "Poor choice of outgroup! At one node ($CurrentGenParent    $GenChildIds) there are qually as many ingroup nodes in two (or more if non binary) children\n";
+			}elsif($MaxValIndex ~~ undef){
+				
+				die "Error with script - algorithm coudln't find find next node\n";
+				
+			}
+			
+			$CurrentGenParent = $CurrentGenChildren[$MaxValIndex];
+			
+			$NextGenDesc = [grep{$_->is_Leaf}($CurrentGenParent->get_all_Descendents)];
 			
 			my ($UnionNextGenOutgroup,$IntersectionNextGenOutgroup,$NextGenExclusive,$OutgroupExclusive) = IntUnDiff($NextGenDesc,$OutgroupNodeIDs);
 			$ExitFlag = 1 unless(scalar(@$IntersectionNextGenOutgroup)); #If there are no members of the out group in the descendents list, we have our root! 
-			
 		}
-	
-		$tree->reroot_at_midpoint($NextGenParent);
+
+		$tree->reroot_at_midpoint($CurrentGenParent);
 					
 	}else{
 		
