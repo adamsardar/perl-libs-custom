@@ -512,6 +512,9 @@ If the third argument ($remove) is set to 1, then only genomes in the ingroup wi
 
 sub FindTrueRoot($$) {
 	
+	use List::Util qw( max );
+	use List::MoreUtils qw( first_index );
+	
 	my ($tree,$OutgroupNodeIDs) = @_;
 	
 	my $TreeLeaves = [($tree->get_leaf_nodes)];
@@ -555,9 +558,6 @@ sub FindTrueRoot($$) {
 				push(@$IntersectionsDescendentsIngroupSize,scalar(@$IntersectionIngroup));
 			}
 			
-			use List::Util qw( max );
-			use List::MoreUtils qw( first_index );
-			
 			my $MaxVal = max(@$IntersectionsDescendentsIngroupSize);		
 			my $MaxValIndex = first_index{$_ == $MaxVal}@$IntersectionsDescendentsIngroupSize;
 			
@@ -599,10 +599,10 @@ A note on the algorithm used:
 If the outgroup has only one node in, then we are done! Root at the midpoint between the leaf and it's ancestor (unless it's already the root) and remove the old root if it was a midpoint rooted tree beforehand
 
 Else:
-For the sake of ease, root the tree on an arbitary leaf node from the out group. Move to it's descendent (or ancestor, depending which way you think of the tree) and ask 'which of the two descendents from here posses more of the ingroup'
+For the sake of ease, root the tree on an arbitary leaf node from the out group. Move to it's ancestor and ask 'which of the node's descendents from here posses more of the ingroup' in it's descendents
 Move along this edge to the next node. Recurse until we find a branch which has no outgroup on the other side.
 
-Only works on a bianry tree at present
+Certainly works for a binary tree or a binary tree rooted on an internal/leaf node (i.e. non mid-point). Should work for a non-binary tree (i.e. with nodes of degree greater than two), but this is a new feature and you should double check it! 
 
 =cut
 
