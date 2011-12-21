@@ -48,27 +48,79 @@ use Bio::Tree::TreeFunctionsI;
 
 sub RAxMLAncestralMarginalProbabilities_FileParser{
 	
-	my ($RAXMLAncestralMarginalProbabilitiesFile,$SpeciesTraitsFile,$TreeCacheHash) = @_;
+	my ($RAXMLAncestralMarginalProbabilitiesFile,$SpeciesTraitsFile,$TreeCacheHash,$TraitLabelsArrayRef) = @_;
+	
+	my $TraitLabelsProvided = (@_ < 4)?0:1; #Flag for is a list of trait labels provided
+	
+	my $TraitLookUp = {}; #This will be a way of finding out where a trait in a strong is stored
+	my @TraitLabels;
 	
 	my @NodeNames = map{$TreeCacheHash->{$_}{'node_id'}}(keys(%$TreeCacheHash));
 	
 	my $NodeNameHash = {};
 	@{$NodeNameHash}{@NodeNames}=undef;
-	#Creates a hash for fast lookups - useful when we loop through the file and identify lines that corres
+	#Creates a hash for fast lookups - useful when we loop through the file and identify lines that correspond to particular entries
 
 	die "Non-unique node IDs. Bad plan!" unless (scalar(keys%$NodeNameHash) == scalar(@NodeNames));
 	
+	open SPECIESSTATES, "<$SpeciesTraitsFile" or die $!.$?;
+	
+	my $temp = <SPECIESSTATES>; #skip past a useless file header
+	
+	my ($NumberOfSpecies,$NumberOfTraits) = split(/\s+/,$temp);
+	my $NoOfStates = 2;
+	
+	print "Input Number of traits = $NumberOfTraits\n";
+	print "Input Number of species = $NumberOfSpecies\n";
+	print "Input Number of states = $NoOfStates\n";
+	
+	if($TraitLabelsProvided){
+	
+		@TraitLabels = @$TraitLabelsArrayRef;
+		map{$TraitLookUp->{$TraitLabels[$_]} = [$_*8,$_*8+7] }(0 .. $NumberOfTraits-1); #For each trait, have an array of trait start and trait stop in string.
+		#$TraitLookUp is a dictionary that maps trait label to position in the string of position - use substr to get the values out
+	}else{
+		
+		@TraitLabels = (1 .. $NumberOfTraits);
+		map{$TraitLookUp->{$TraitLabels[$_]} = [$_*8,$_*8+7] }(0 .. $NumberOfTraits-1); #For each trait, have an array of trait start and trait stop in string.
+		#$TraitLookUp is a dictionary that maps trait label to position in the string of position - use substr to get the values out
+		#$TraitLookUp->{trait_label} = [start end]
+	}
+
 	#BioPerlId->Node Name to internal node id (assigned when $TreeCacheHash was created)
 	my $NodeName2BPNodeIDMapper = {};
 	map{$NodeName2BPNodeIDMapper->{$TreeCacheHash->{$_}{'node_id'}}=$_}(keys(%$TreeCacheHash));
+	
+	my $CurrentNode; #Throughout the loop this will be the node under analysis. Suggest a better format to Alexis of RAxML
+	my $AncestralState; #This will be an array ref concatenated string of multistate probabilities. So length 2 in the binary case
+ 	
+ 	my ($State0,$State1); #ASSUMPTION! At current RAxML only deals with binary state ancestral reconstruction. If this changes, then this part of the script will need altering
+ 		
+	while (my $line = <SPECIESSTATES>){
+		
+		next if($line =~ m/^#/ || $line =~ m/^$/); #Trim out blank lines and comments
+		
+		chomp($line);
+		
+		my ($species,$traits)= split(/\s+/,$line);
+		my $BPCurrentNode = $NodeName2BPNodeIDMapper->{$species};
+		
+		($State0,$State1) = ([(("0.000000")x$NoOfStates)],[(("0.000000")x$NoOfStates)]);
+		
+		my $TraitCount = 0;	
+		map{if($_){$State0->[$TraitCount] = "1.000000";}else{$State0->[$TraitCount] = "1.000000";} $TraitCount++; }(split('',$traits));
+			
+		my $traitsarray = [(join('',@$State0),join('',@$State0))];
+
+		$TreeCacheHash->{$BPCurrentNode}{'RAxML_AncestralProbabilities'} = $traitsarray;
+		$TreeCacheHash->{$BPCurrentNode}{'RAxML_Trait_String_Poistions_Lookup'} = $TraitLookUp; #Have a copy of the trait lookup pointer in every node - it just makes things a little easier and for not much of a memory overhead 
+	}
+	
+	close SPECIESSTATES;
+	
 
 	open RAXMLSTATES, "<$RAXMLAncestralMarginalProbabilitiesFile" or die $!.$?;
 	
-	my $CurrentNode; #Throughout the loop this will be the node under analysis. Suggest a better format to Alexis of RAxML
-	my $AncestralState; #This will be an array ref to a 2D array of multistate probabilities
- 	
- 	my $SimpleAncestralHash = {};
- 	
 	while (my $line = <RAXMLSTATES>){
 		
 		next if($line =~ m/^#/ || $line =~ m/^\s*$/); #Trim out blank lines and comments
@@ -81,64 +133,66 @@ sub RAxMLAncestralMarginalProbabilities_FileParser{
 				
 				$CurrentNode=$line; #Switch the node under anlaysis.			
 				
+				if($AncestralState !~ undef){
+					
+					my $State0String = join('',@$State0);
+					my $State1String = join('',@$State1);
+					
+					@$AncestralState = ($State0String,$State1String)
+				}
+				
+				($State0,$State1) = ([],[]);
 				$AncestralState = [];
-				
 				my $BPCurrentNode = $NodeName2BPNodeIDMapper->{$CurrentNode};
-				
 				$TreeCacheHash->{$BPCurrentNode}{'RAxML_AncestralProbabilities'} = $AncestralState;
-				$SimpleAncestralHash->{$CurrentNode} = $AncestralState;
+				$TreeCacheHash->{$BPCurrentNode}{'RAxML_Trait_String_Poistions_Lookup'} = $TraitLookUp; #Have a copy of the trait lookup pointer in every node - it just makes things a little easier and for not much of a memory overhead 
 				
 			}else{
 				
 				my @MultiStateProbablities = split(/\s+/,$line);
-				push(@$AncestralState,\@MultiStateProbablities); #Create a 2D array of multistate probabilities
+				die "Script only handles binary state reconstruction at line $." if(scalar(@MultiStateProbablities) != 2);	
+				#Change the states to shorter ints (6d.p.)
+								
+				map{unless($_ =~ m/(0|1)\.\d{6}/){ die "Expecting marginal probabilities to be of the for 0.123456 with six digits agter dp! Got $_ \n"}}@MultiStateProbablities;
+				#Expected 8 carachters per probability
+				
+				#push onto states
+				push(@$State0,$MultiStateProbablities[0]);
+				push(@$State1,$MultiStateProbablities[1]); 
 			}
-			
 	}
+	
+	
+	my $State0String = join('',@$State0);
+	my $State1String = join('',@$State1);
+	@$AncestralState = ($State0String,$State1String);
+	#Process the last trait in the file
 	
 	my $RootBP = $NodeName2BPNodeIDMapper->{'ROOT'};
 	
-	my @RootDescendents = @{$TreeCacheHash->{$RootBP}{'each_Descendent'}};
+	my $MeasuredNoOfTraits = length($TreeCacheHash->{$RootBP}{'RAxML_AncestralProbabilities'}[0])/8;
 
+	open FH, "> file.traits" or die $!;
 	
-	my $NoOfTraits = scalar(@{$TreeCacheHash->{$RootDescendents[0]}{'RAxML_AncestralProbabilities'}});
-	my $NoOfStates = scalar(@{$TreeCacheHash->{$RootDescendents[0]}{'RAxML_AncestralProbabilities'}[0]});
+	print FH $TreeCacheHash->{$RootBP}{'RAxML_AncestralProbabilities'}[0];
+	
+	close FH;
+	
 	#Using the root to estimate the number of states and the number of traits should be fine, but we'll use the first level down just to be on the safe side
 
 	print "Number of states = $NoOfStates\n";
-	print "Number of traits = $NoOfTraits\n";
+	print "Number of traits = $MeasuredNoOfTraits\n";
+	
+	
+	my @RootDescendents = @{$TreeCacheHash->{$RootBP}{'each_Descendent'}};
 	
 	close RAXMLSTATES;
-	
-	open SPECIESSTATES, "<$SpeciesTraitsFile" or die $!.$?;
-	
-	my $temp = <SPECIESSTATES>; #skip past a useless file header
-	
-	while (my $line = <SPECIESSTATES>){
-		
-		next if($line =~ m/^#/ || $line =~ m/^$/); #Trim out blank lines and comments
-		
-		chomp($line);
-		
-		my ($species,$traits)= split(/\s+/,$line);
-		my $BPCurrentNode = $NodeName2BPNodeIDMapper->{$species};
-		
-		my $traitsarray = [];
-		
-		my $states;
-		map{$states = [(("0.00")x$NoOfStates)]; $states->[$_] = "1.00"; push(@$traitsarray,$states)}(split('',$traits));
-		
-		$TreeCacheHash->{$BPCurrentNode}{'RAxML_AncestralProbabilities'} = $traitsarray;	
-	}
-	
-	close SPECIESSTATES;
-	
 
 	print "Finally!\n";
 	
 	return(1);
 	
-	#The function reA script to take a list of genomes (strains or whatever) and output some summary data regarding the domain architectures in common.
+	#A script to take a list of genomes (strains or whatever) and output some summary data regarding the domain architectures in common.
 	#ally updates $TreeChacehHash. YEs this will use alot of memory. But, if run over the whole of SUPERFAMILY on
 	#complete tree of life this will take up 2GB. Not so bad. The other option is to migrate to an object based system which only pulls in the
 	#relevant stuff on the fly. Or a database strucutre ...

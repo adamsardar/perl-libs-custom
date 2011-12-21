@@ -39,7 +39,8 @@ our @EXPORT    = qw(
 			TreeIntersection
 			FindMRCA
 			Newick2Node
-			LeavesWithTrait
+			DolloPLeavesWithTrait
+			RAxMLLeavesWithTrait
 			Node2Newick
 			Splice_Node
 			Splice_Root
@@ -316,12 +317,12 @@ of information about each node precalculated.
 
 Each node is stored as follows $TreeHash->{Node key}
 There is then a variety of values stored:
-$TreeHash->{BioPerl NodeID}{'all_Descendents'} - All Node keys of nodes below this one, stored as a hash {node}=undef to allow for quick querying
-$TreeHash->{BioPerl NodeID}{'each_Descendent'} - The direct descendents of this node
-$TreeHash->{BioPerl NodeID}{'Clade_Leaves'} - All the leaf nodes below this one, stored as a hash {leaf}=undef to allow for quick querying
-$TreeHash->{BioPerl NodeID}{'branch_length'} - The lengDolloParsimonyAncestralStateth of the branch connecting this node to it's parent
-$TreeHash->{BioPerl NodeID}{'is_Leaf'} - 1/0 flag for if the node is a leaf
-$TreeHash->{BioPerl NodeID}{'ancestor'} - BioPerl reference of nodes parent
+$TreeHash->{NodeID}{'all_Descendents'} - All Node keys of nodes below this one, stored as a hash {node}=undef to allow for quick querying
+$TreeHash->{NodeID}{'each_Descendent'} - The direct descendents of this node
+$TreeHash->{NodeID}{'Clade_Leaves'} - All the leaf nodes below this one, stored as a hash {leaf}=undef to allow for quick querying
+$TreeHash->{NodeID}{'branch_length'} - The lengDolloParsimonyAncestralStateth of the branch connecting this node to it's parent
+$TreeHash->{NodeID}{'is_Leaf'} - 1/0 flag for if the node is a leaf
+$TreeHash->{NodeID}{'ancestor'} - BioPerl reference of nodes parent
 $TreeCacheHash->{$node}{'Total_branch_lengths'}  - the total branch length of the clade beneath this node
 $TreeCacheHash->{$MRCA}{'Probability_Hash'}={ clade point => nodeID} - clade point is the point in the clade beneath the MRCA node which this node sits
 $TreeCacheHash->{$MRCA}{'node_id'}='Node name' as given in the input newick file
@@ -363,11 +364,13 @@ $CladeREGEX = qr{
 }x;
 	
 
-our $SubcladeRegex;#Have to predeclare else variable wont be in scope (it calls itself)
+our $SubcladeRegex;
+#Have to predeclare else variable wont be in scope (it calls itself)
 $SubcladeRegex= qr{ #Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$     or      (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
 		\( ((??{$CladeREGEX})) \) (\w*) (?: :(\d*\.?\d* (?:[eE][-+][0-9]+)?  ))?  #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
 }x;
-	
+
+
 our $UngroupedSubcladeRegex;#Have to predeclare else variable wont be in scope (it calls itself)
 $UngroupedSubcladeRegex= qr{
 	(?:
@@ -1164,7 +1167,7 @@ sub RemoveNode{
 }
 
 
-sub LeavesWithTrait($$$){
+sub DolloPLeavesWithTrait($$$){
 	
 	my ($TreeHash,$root,$Trait) = @_;
 	
@@ -1186,11 +1189,45 @@ sub LeavesWithTrait($$$){
 }
 
 =pod
-=item *LeavesWithTrait($TreeHash,$root,$Trait)
+=item *DolloPLeavesWithTrait($TreeHash,$root,$Trait)
 
 Quick function to find the leaves beneath a node ($root) that posses a given trait ($Trait). Returns an array ref of the list of nodes with the trait
 =cut
 
+
+sub RAxMLLeavesWithTrait($$$){
+	
+	my ($TreeCacheHash,$root,$Trait) = @_;
+	
+	my @TreeLeaves = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
+		
+	my $LeavesWithTrait = [];
+	
+	my $RAxML_Positions_Lookup = $TreeCacheHash->{$root}{'RAxML_Trait_String_Poistions_Lookup'};
+	
+	foreach my $Leaf (@TreeLeaves){
+		
+		my ($start,$end) = @{$RAxML_Positions_Lookup->{$Trait}};
+			
+		my $RAxMLMarginalProbabilitiesConcatenatedStringState1 = $TreeCacheHash->{$Leaf}{'RAxML_AncestralProbabilities'}[1];
+		
+		my $LeafTraitState = substr($RAxMLMarginalProbabilitiesConcatenatedStringState1,$start,($end-$start));
+		
+		
+		
+		push(@$LeavesWithTrait,$Leaf) if($LeafTraitState > 0.5);
+	}
+	
+	return($LeavesWithTrait); #A list of leaves with the trait of interest, provided in the arguments
+	
+}
+
+=pod
+=item *RAxMLLeavesWithTrait($TreeHash,$root,$Trait)
+
+Quick function to find the leaves beneath a node ($root) that posses a given trait ($Trait). Returns an array ref of the list of nodes with the trait
+To be used after adding data to TreeCacheHAsh using RAxML Marginal Probabilities Parser
+=cut
 
 
 1;

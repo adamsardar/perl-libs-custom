@@ -30,6 +30,7 @@ our @ISA       = qw(Exporter AutoLoader);
 our @EXPORT    = qw(
 					PopulateDolloPStateAssingments	
 					DolloParsimonyAncestralState
+					dolloTraitDecoration
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -99,13 +100,6 @@ sub DolloParsimonyAncestralState{ #No prototyping as the number of arguments can
 		$TreeHash->{$CurrentNodeID}{'DolloP_Trait_String_Poistions_Lookup'} = $TraitLookUp; #Have a copy of the trait lookup pointer in every node - it just makes things a little easier and for not much of a memory overhead 
 	}
 	
-
-#}else{
-	
-#	map{$TreeHash->{$_}{'DolloPTraitStates'} = $TreeHash->{$_}{'RAxML_AncestralStates'};}@{$TreeHash->{$root}{'Clade_Leaves'}};
-
-#}
-
 close LEAFSTATES;
 
 	##Parsed all the leaf states in. Now to work out all the other information.
@@ -182,7 +176,7 @@ sub Parallel_DolloPStates($){
 			
 	foreach my $Node (@{$JobHash->{$iterator}}){
 		
-			my $PASS = {};
+			my $PASS = {}; #PASS I think stands for parallel assignment
 			@{$PASS}{('TreeHash','TraitDetails','Node')}=($TreeHash,$TraitDetailsHash,$Node);
 		
 			my $Reults = PopulateDolloPStateAssingments($PASS);
@@ -237,6 +231,63 @@ sub PopulateDolloPStateAssingments($){
 Function to assign dollo parsimony states to a single node, $Node. Please don't call directly.
 
 =cut
+
+sub dolloTraitDecoration($$$$$); #Recursive function
+sub dolloTraitDecoration($$$$$){
+	
+	my ($TreeHash,$Node,$FILEHANDLE,$LeavesWithTrait,$FormatString) = @_;
+	
+	my @NodeLeafDescendents;
+	
+	unless($TreeHash->{$Node}{'is_Leaf'}){
+	
+		@NodeLeafDescendents = @{$TreeHash->{$Node}{'Clade_Leaves'}};
+	}else{
+		
+		@NodeLeafDescendents = ($Node);
+	}
+	
+	
+	my (undef,$Intersection,undef,undef) = IntUnDiff($LeavesWithTrait,\@NodeLeafDescendents);
+		
+		
+	if(scalar(@$Intersection)){
+		
+		unless($TreeHash->{$Node}{'is_Leaf'}){
+		
+			foreach my $Descendent (@{$TreeHash->{$Node}{'each_Descendent'}}){
+				
+				dolloTraitDecoration($TreeHash,$Descendent,$FILEHANDLE,$LeavesWithTrait,$FormatString);
+			}
+		}else{
+			
+			return(1);
+			
+		}
+			
+	}else{
+			
+		my $TraitAbsentCladeString = join(' ',map{$TreeHash->{$_}{'node_id'}}@NodeLeafDescendents);
+	
+		print $FILEHANDLE $FormatString.$TraitAbsentCladeString."\n";
+			
+		return(1);
+	}
+	
+	
+}
+
+=pod
+=item *dolloTraitDecoration($TreeHash,$MRCA,FILEHANDLE,$LeavesWithTrait,$FormatString)
+
+Function to assign dollo parsimony estimate of a single trait on a given tree and output
+the clade's recognised to a file FILEHANDLe using the style given in $FormatString.
+
+=cut
+
+
+
+
 
 1;
 

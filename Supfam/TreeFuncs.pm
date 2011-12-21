@@ -67,7 +67,9 @@ use Bio::Tree::TreeI;
 
 
 sub SQL2Newick($$){
-		
+	
+	die "This function is pretty fucked and you shoudln't use it\n";
+	
 	my ($rootleft,$rootright) = @_;
 		
 	my $RightTreeHash = {}; #A hash of the tree ordered by right id
@@ -195,9 +197,11 @@ sub SQL2Newick($$){
 	my $FullTree = $LeftTreeHash->{$rootleft}[1][2];
 	$FullTree="(".$FullTree.");";
 	$LeftTreeHash->{$rootleft}[1][2]=$FullTree;
+	
 	$FullTree = $RightTreeHash->{$rootright}[1][2];
 	$FullTree="(".$FullTree.");";
 	$RightTreeHash->{$rootright}[1][2]=$FullTree;
+
 	#Above is to correct the final trees created in the resulting hashes.
 	
 	return($RightTreeHash,$LeftTreeHash);
@@ -523,9 +527,12 @@ sub FindTrueRoot($$) {
 	my $root = $tree->get_root_node;
 	
 	my $OldRoot = $root;
-	$OldRoot->id('##1234ROOT5678##'); # Gives the current Root of the tree an arbitary unique string. This method will fail if you have another node called this
-	my @rootdescendents = $root->each_Descendent;
-	my $RootedTest = (scalar(@rootdescendents) == 2)?1:0;
+	my @rootdescendents = $OldRoot->each_Descendent;
+
+	my $RootedTest = (scalar(@rootdescendents) == 1 || scalar(@rootdescendents) == 2)?1:0;
+	$OldRoot->id('##1234ROOT5678##') if($RootedTest); # Gives the current Root of the tree an arbitary unique string. This method will fail if you have another node called this
+	
+
 	#Test if input tree is rooted or unrooted: if rooted, then node will have exactly two descendents (as it's rooted at a midpoint). If unrooted, then it will have more or 1 (if it's a leaf)
 
 	die "Outgroup not wholly contained within tree taxa!\n" if (scalar(@$OutgroupExclusive)); # $OutgroupExclusive should be empty!
