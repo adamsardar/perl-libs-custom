@@ -31,6 +31,7 @@ our @EXPORT    = qw(
 					PopulateDolloPStateAssingments	
 					DolloParsimonyAncestralState
 					dolloTraitDecoration
+					DOLLOP_Ancestral_Trait_Changes_in_Clade
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -58,15 +59,10 @@ sub DolloParsimonyAncestralState{ #No prototyping as the number of arguments can
 	
 	open LEAFSTATES, "<$LeafStatesFile";
 	
-	my $temp = <LEAFSTATES>; #Pass through the first (unimportant) line of phylip file detailing the number of traits and number of species
+	my $temp = <LEAFSTATES>; #Pass through the first (unimportant) line of phylip traits file detailing the number of traits and number of species
 	
 	my ($NumberOfSpecies,$NumberOfTraits) = split(/\s+/,$temp);
 	
-	#my $RAxMLTraitsPresent = 1;
-	
-	#map{$RAxMLTraitsPresent = 0 unless(exists($TreeHash->{$_}{'RAxML_AncestralStates'}));}@{$TreeHash->{$root}{'Clade_Leaves'}}; #No point reparsing a file if the values already exist in memory
-	
-#unless($RAxMLTraitsPresent){
 	
 	if($TraitLabelsProvided){
 	
@@ -90,7 +86,7 @@ sub DolloParsimonyAncestralState{ #No prototyping as the number of arguments can
 
 		my ($CurrentNode,$AncestralStates) = split(/\s+/,$line);
 		
-		die "Bad Node Name in input file: $CurrentNode!\n" unless(exists($NodeNameMapper->{$CurrentNode})); # Bit of error checking
+		die "Bad Node Name in genome traits input file: $CurrentNode!\n" unless(exists($NodeNameMapper->{$CurrentNode})); # Bit of error checking
 
 		@TraitLabels = (1 .. length($AncestralStates)) unless ($TraitLabelsProvided); #In case Trait labels was left undefined in input
 		
@@ -109,7 +105,7 @@ close LEAFSTATES;
 
 	my (undef,undef,undef,$InternalNodes) = IntUnDiff(\@TreeLeaves,\@AllNodes); #Ignore all but final value returned # InUnDiff returns ($Union,$Intersection,$ListAExclusive,$ListBExclusive)
 
-	print "Parsed Leaf States";
+	print STDERR "Parsed Leaf States\n";
 
 	map{$TreeHash->{$_}{'DolloPTraitStates_TempArray'}= [(undef) x $NumberOfTraits]; $TreeHash->{$_}{'DolloP_Trait_String_Poistions_Lookup'} = $TraitLookUp;}@$InternalNodes;
 	
@@ -119,7 +115,7 @@ close LEAFSTATES;
 	
 	foreach my $Trait (keys(%{$TreeHash->{$root}{'DolloP_Trait_String_Poistions_Lookup'}})){
 			
-		my $LeavesWithTrait = LeavesWithTrait($TreeHash,$root,$Trait); #ArrayRef of leaves with given trait.
+		my $LeavesWithTrait = DolloPLeavesWithTrait($TreeHash,$root,$Trait); #ArrayRef of leaves with given trait.
 
 		my $TraitPosition = $TraitLookUp->{$Trait};
 		
@@ -153,8 +149,6 @@ close LEAFSTATES;
 	}
 		
 	map{my $ReturnedResults = $_->join(); map{$TreeHash->{$$_[0]}{'DolloPTraitStates'} = $$_[1];}@$ReturnedResults }@Threads;
-	
-	print "\n\nCalculated Dollo Parsimony estimates of each trait\n\n";
 	
 	return(1);
 }
@@ -285,6 +279,100 @@ the clade's recognised to a file FILEHANDLe using the style given in $FormatStri
 
 =cut
 
+
+=item * DOLLOP_Ancestral_Trait_Changes_in_Clade($TreeCacheHash,$node,$traitlabelsarray)
+
+After running DolloParsimonyAncestralState to calculate dollo parsimony ancestral states, this function will calculate the number of traits that have been created or deleted along each branch.
+These are stored in:
+
+	$TreeCacheHash->{$node}{'DOLLOP_Number_Created'}
+	$TreeCacheHash->{$node}{'DOLLOP_Number_Deleated'}
+
+Also present for each node are:
+
+	$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Created'}
+	$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Deleated'}
+
+=cut
+
+sub DOLLOP_Ancestral_Trait_Changes_in_Clade{ #Left out the prototyping arguments as its a recursive function. Be careful
+	
+	my ($TreeCacheHash,$node,$root,$traitlabelsarray) = @_;
+	
+	my $TraitLabelsProvided = (@_ < 4)?0:1; #Flag for is a list of trait labels provided - these are the traits that we wish to act upon. If nothign is provided, then all traits will be used
+	@$traitlabelsarray = (keys(%{$TreeCacheHash->{$root}{'DolloP_Trait_String_Poistions_Lookup'}})) unless($TraitLabelsProvided); #If no traits were provided, assume that all labels are wanted
+	
+	die "No entries in '$TreeCacheHash->{$root}{'DolloP_Trait_String_Poistions_Lookup'}'. Run DolloParsimonyAncestralState first before using this function." unless(exists($TreeCacheHash->{$root}{'DolloP_Trait_String_Poistions_Lookup'}));
+	
+	my @AncestorStates;
+	my $TraitsPositionsLookup = $TreeCacheHash->{$node}{'DolloP_Trait_String_Poistions_Lookup'}; #All traits are stored as a logn string like 01001010010. We use substr to extract the one we want. This dictionary simply maps from trait to position
+	
+	if($node eq $root){
+		
+		@AncestorStates = (0) x scalar(@$traitlabelsarray); #If the node is the root, then all prescent traits are assumed to have been created beforehand. So it's ancestor will be all 0's.
+	}else{
+	
+		my $Ancestor = $TreeCacheHash->{$node}{'ancestor'};
+		my $AncestorStateString = $TreeCacheHash->{$Ancestor}{'DolloPTraitStates'};
+		@AncestorStates = map{substr($AncestorStateString,$_,1)}(@{$TraitsPositionsLookup}{@$traitlabelsarray});
+	}
+	
+	my $NodeStateString = $TreeCacheHash->{$node}{'DolloPTraitStates'};
+	my @NodeStates = map{substr($NodeStateString,$_,1)}(@{$TraitsPositionsLookup}{@$traitlabelsarray});
+		
+	my ($no_creations,$no_deletions) = (0,0); 
+	
+	foreach my $TraitIndex (0 .. (scalar(@$traitlabelsarray)-1)){
+		
+		my ($AncestorState,$NodeState) = ($AncestorStates[$TraitIndex],$NodeStates[$TraitIndex]);
+		
+		next if ($AncestorState ~~ '?' || $NodeState ~~ '?');
+		
+		die "Only binary states supported  $AncestorState $NodeState \n" unless ( scalar(grep{$_ == $AncestorState}(0,1)) && scalar(grep{$_ == $NodeState}(0,1)));
+	
+		if($AncestorState - $NodeState < 0){
+	
+			$no_creations ++;
+		}elsif($AncestorState - $NodeState > 0){
+	
+			$no_deletions ++;
+		}
+	}
+				
+	$TreeCacheHash->{$node}{'DOLLOP_Number_Created'} = $no_creations;
+	$TreeCacheHash->{$node}{'DOLLOP_Number_Deleted'} = $no_deletions;
+	#This is the number of traits created/deleted along the ancestral branch ABOVE the current node 
+	
+	unless ($TreeCacheHash->{$node}{'is_Leaf'}){
+			
+		my @Children = @{$TreeCacheHash->{$node}{'each_Descendent'}};
+			
+		$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Created'} = $no_creations;
+		$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Deleted'} = $no_deletions;	
+			
+		foreach my $Child (@Children){
+			
+			 my ($Total_no_creations,$Total_no_deletions) = DOLLOP_Ancestral_Trait_Changes_in_Clade($TreeCacheHash,$Child,$root,$traitlabelsarray);
+			#Notice the replacement of $node with $Child.
+			#Total_no_X is the number of deletions/ creations in branches BELOW this node. 
+			#This will be added to the number of deletions along this nodes ancestral branch to give the total in the clade BELOW the branch beneath the ancestor of the node under study
+
+			$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Created'} += $Total_no_creations;
+			$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Deleted'} += $Total_no_deletions;
+		}
+		
+		my ($Total_no_creations,$Total_no_deletions) = ($TreeCacheHash->{$node}{'DOLLOP_Total_Number_Created'},$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Deleted'});
+		
+		return($Total_no_creations,$Total_no_deletions);
+			
+	}else{
+			
+		$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Created'} = $no_creations;
+		$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Deleted'} = $no_deletions;	
+			
+		return($no_creations,$no_deletions);	
+	}
+}
 
 
 

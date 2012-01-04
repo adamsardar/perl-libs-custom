@@ -366,7 +366,7 @@ $CladeREGEX = qr{
 
 our $SubcladeRegex;
 #Have to predeclare else variable wont be in scope (it calls itself)
-$SubcladeRegex= qr{ #Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$     or      (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
+$SubcladeRegex= qr{ #Example string: ^(C:0.3,D:0.4):0.5$
 		\( ((??{$CladeREGEX})) \) (\w*) (?: :(\d*\.?\d* (?:[eE][-+][0-9]+)?  ))?  #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
 }x;
 
@@ -384,29 +384,24 @@ $UngroupedSubcladeRegex= qr{
  }x;
 
 
-
 	
-if($NewickString =~ m/;$/){ #Deal with full newick strings
+if($NewickString =~ m/;$/){ #Deal with full newick strings - so close to at the root (even if we are dealign with an unrooted tree!)
 
 	if($NewickString =~ m/^\(?($SubcladeRegex)\)?;$/){
 		
-		$NewickString = $1;
-		
-		Newick2Node($NewickString, $TreeHash,'ROOT');
-
-		return($NewickString); #i.e. returns the root oDolloParsimonyAncestralStatef the tree node in the hash
-		
-	}elsif($NewickString =~ m/^\(?($CladeREGEX)\)?;$/){
-		
 		#Another popular style to provide a tree with no distance to a root: (A,B,(C,D)); :0.1,:0.2,(:0.3,:0.4):0.5);  - we shall trim off the semi-colon and parse through (:0.1,:0.2,(:0.3,:0.4):0.5):0.0
+		$NewickString = $1;
+		my ($DescendentString,$NodeName,$Branchlength) = ($2,$3,$4);
 		
-		$NewickString = "(".$1."):0.00";
-		#this could end up adding a zero length branch length to the root in a tree without branch lengths. At this point, we don't know if the tree has branch lenghts or not, but this will be checked for in the parent 'BuildTreeCacheHash' routine
-		
-		Newick2Node($NewickString, $TreeHash,'ROOT');	
+		if($Branchlength ~~ undef){
+			 
+			$NewickString = $NewickString.":0.00";
+		}
+				
+		Newick2Node($NewickString, $TreeHash,'ROOT');
 		
 		return($NewickString); #i.e. returns the root of the tree node in the hash
-	
+				
 	}else{
 		
 		die "Unable to parse tree!!!! \n";
@@ -597,7 +592,7 @@ sub ExtractNewickSubtree($$$$){
 	
 	foreach my $Descendent (@Descendents){
 		
-		my $SubCladeInNewick = Node2Newick($TreeHash,$Descendent,$desired_root,$branchesflag,$internalnodesflag);
+		my $SubCladeInNewick = Node2Newick($TreeHash,$desired_root,$Descendent,$branchesflag,$internalnodesflag);#($TreeHash,$Ancestor,$node,$branchesflag,$internalnodesflag)
 		push(@Subclades,$SubCladeInNewick);
 	}
 	
@@ -605,14 +600,14 @@ sub ExtractNewickSubtree($$$$){
 		
 	if($internalnodesflag){
 	
-			print STDERR "WARNING: internal node_ids desired, but none givne in input tree\n" unless($TreeHash->{$desired_root}{'node_id'});
+			print STDERR "WARNING: internal node_ids desired, but none given in input tree for nodeID $desired_root\n" unless($TreeHash->{$desired_root}{'node_id'});
 			my $NodeName = $TreeHash->{$desired_root}{'node_id'};
 			$CladeInNewick = $CladeInNewick.$NodeName;
 	}
 		
 	if($branchesflag){
 	
-			print STDERR "WARNING: Branch Lengths desired, but none givne in input tree\n" unless($TreeHash->{$desired_root}{'branch_length'});
+			print STDERR "WARNING: Branch Lengths desired, but none given in input tree for nodeID $desired_root\n" unless(exists($TreeHash->{$desired_root}{'branch_length'}));
 			my $BranchLength = $TreeHash->{$desired_root}{'branch_length'};
 			$CladeInNewick = $CladeInNewick.':'.$BranchLength;
 	}
@@ -832,7 +827,7 @@ sub Node2Newick($$$$$){
 
 	if($branchesflag){
 	
-		print STDERR "WARNING: Branch Lengths desired, but none givne in input tree\n" unless($TreeHash->{$node}{'branch_length'});
+		print STDERR "WARNING: Branch Lengths desired, but none givne in input tree\n" unless(exists($TreeHash->{$node}{'branch_length'}));
 			
 		unless(grep{/$Ancestor/}(@{$TreeHash->{$node}{'each_Descendent'}})){ #Unless the desired ancestor is currently a descendant of the node
 				
@@ -851,9 +846,7 @@ sub Node2Newick($$$$$){
 		
 		my @NeighbouringNodes = (@{$TreeHash->{$node}{'each_Descendent'}},$TreeHash->{$node}{'ancestor'}); #Forget about direction, we're treating the tree as a graph (no directionaility yet)
 		my @NewDescendants = grep{$_ ne $Ancestor}@NeighbouringNodes; #Specifying an ancestory gives directionality to the tree - non-ancestor neighbours are therefore descendents
-		
-		print scalar(@NeighbouringNodes)."\n";
-		
+
 		my @SubClades;
 		
 		foreach my $Descendent (@NewDescendants){
@@ -863,16 +856,13 @@ sub Node2Newick($$$$$){
 		}
 		
 		$CladeInNewick = "(".join(',',@SubClades).")";
-		
 		$CladeInNewick = $CladeInNewick.':'.$BranchLength if($branchesflag);	
 		
 	}else{ #i.e. it's a leaf
 		
 		my $NodeName = $TreeHash->{$node}{'node_id'};
-		die "WARNING: no node_id for leaf in input tree\n" unless($TreeHash->{$node}{'node_id'});
-		
+		die "WARNING: no node_id for leaf in input tree\n" if($TreeHash->{$node}{'node_id'} ~~ undef);
 		$CladeInNewick = $NodeName;
-		
 		$CladeInNewick = $CladeInNewick.':'.$BranchLength if($branchesflag);	
 		
 	}
