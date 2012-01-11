@@ -35,7 +35,8 @@ our @EXPORT    = qw(
 			FindTrueRoot
 			BuildTreeCacheHash
 			GenerateCladeTimeHash
-			SQL2Newick
+			normailseSQLTreeHashBranchForDeletions
+			supfamSQL2TreeHash
 			TreeIntersection
 			FindMRCA
 			Newick2Node
@@ -76,186 +77,149 @@ use Bio::Tree::TreeI;
 =over 4
 =cut
 
-sub SQL2Newick($$){
+sub supfamSQL2TreeHash($$){
 		
 	my ($rootleft,$rootright) = @_;
-		
-	my $RightTreeHash = {}; #A hash of the tree ordered by right id
-	my $LeftTreeHash = {}; #A hash of the tree ordered by left id
+	
+	my $tic = Time::HiRes::time; 
+	
+	my $SQLTreeCacheHash = {};
 	
 	my $dbh = dbConnect();
 	
-	my $sth = $dbh->prepare("SELECT left_id,right_id,edge_length,nodename FROM tree WHERE left_id >= ? AND right_id <= ?;");
+	my $sth = $dbh->prepare("SELECT left_id,right_id FROM tree WHERE left_id >= ? AND right_id <= ?;");
 	$sth->execute($rootleft,$rootright);
+	#Collect left_ids of all nodes beneth desired root - these will be used as the unique keys of the treehash
 	
-	while (my ($leftid,$rightid,$edge_length,$nodename) = $sth->fetchrow_array() ){
-	
-		my $NewickClade = 'NULL'; #The calde below this node in newick format - initialise with a default value
+	while (my ($left_id,$right_id) = $sth->fetchrow_array()){
 		
-		my $NodeData = [$nodename,$edge_length,$NewickClade];
-		
-		$RightTreeHash->{$rightid} = [$leftid,$NodeData];
-		$LeftTreeHash->{$leftid} = [$rightid,$NodeData];
+		$SQLTreeCacheHash->{$left_id}{'right_id'}=$right_id;
+		$SQLTreeCacheHash->{$left_id}{'left_id'}=$left_id;
 	}
 	
-	my $NextGenLeftIDs = {};
-	my $CurrentGenLeftIDs = [];
+	$sth = $dbh->prepare("SELECT nodename,edge_length,taxon_id FROM tree WHERE tree.left_id = ?;");
 	
-	my $TreeLeftIDs; 
-	map{$TreeLeftIDs->{$_}=undef}keys(%$LeftTreeHash);
+	my @AllLeftIDs = (keys(%$SQLTreeCacheHash));
+	#All left ids in clade, including desired root
 	
-	foreach my $leftid (keys(%$TreeLeftIDs)){
+	foreach my $Clade_Node_leftid (@AllLeftIDs){
 		
-		my $rightid = $LeftTreeHash->{$leftid}[0];
+		$sth->execute($Clade_Node_leftid);
 		
-		if ($rightid == ($leftid+1)){ #if node is a leaf
+		my ($nodename,$edge_length,$taxon_id) = $sth->fetchrow_array();
 				
-			no warnings 'uninitialized';	
-				
-			my ($nodename,$edge_length,$NewickClade) = @{$LeftTreeHash->{$leftid}[1]};
-				
-			my $NewickString = $nodename.":".$edge_length;
-			$LeftTreeHash->{$leftid}[1][2] = $NewickString; #Update old newick string from 'NULL' to correct value
-			$RightTreeHash->{$rightid}[1][2] = $NewickString;
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'all_Descendents'}
+		=
+		[grep{$_ > $SQLTreeCacheHash->{$Clade_Node_leftid}{'left_id'} 
+		&& 
+		($SQLTreeCacheHash->{$_}{'right_id'}) < ($SQLTreeCacheHash->{$Clade_Node_leftid}{'right_id'})}(@AllLeftIDs)];
 		
-			delete($TreeLeftIDs->{$leftid});
-		}	
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'each_Descendent'}
+		=
+		[grep{
+			($SQLTreeCacheHash->{$_}{'left_id'}) == ($SQLTreeCacheHash->{$Clade_Node_leftid}{'left_id'}+1) 
+		|| 
+			($SQLTreeCacheHash->{$_}{'right_id'}) == ($SQLTreeCacheHash->{$Clade_Node_leftid}{'right_id'}-1)
+			}(@AllLeftIDs)
+		];
+		
+		#Nodes where left id of current node is one more than that in @AllLeftIDs or the right id is one less.
+		
+		my ($Ancestor) = grep{$_ == $SQLTreeCacheHash->{$Clade_Node_leftid}{'left_id'}-1 || ($SQLTreeCacheHash->{$_}{'right_id'}) == ($SQLTreeCacheHash->{$Clade_Node_leftid}{'right_id'}+1)}(@AllLeftIDs);
+		
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'ancestor'} = $Ancestor;
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'is_Leaf'} = ($SQLTreeCacheHash->{$Clade_Node_leftid}{'right_id'} == ($SQLTreeCacheHash->{$Clade_Node_leftid}{'left_id'} + 1))?1:0;;
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'branch_length'}=$edge_length;
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'taxon_id'}=$taxon_id;
+		$SQLTreeCacheHash->{$Clade_Node_leftid}{'node_id'}=$nodename;
+		
+		$sth->finish();
 	}
 	
-	#Initilise leaf nodes with values
-	#(possibility of additional functionality - exclude a list of genomes)
-		
-	while (scalar(keys(%$TreeLeftIDs))){
+	$SQLTreeCacheHash->{$rootleft}{'ancestor'} = 'ROOT'; # Set root as having 'ROOT' as its ancestor
+	
+	foreach my $LEFTID (@AllLeftIDs){
+		my @NodeAllDescendents = @{$SQLTreeCacheHash->{$LEFTID}{'all_Descendents'}};
+		$SQLTreeCacheHash->{$LEFTID}{'Clade_Leaves'} = [grep{$SQLTreeCacheHash->{$_}{'is_Leaf'}}(@NodeAllDescendents,$LEFTID)];
+	}
 
+	dbDisconnect($dbh);
 	
-		
-	my ($rootleft,$rootright) = @_;
-		
-	my $RightTreeHash = {}; #A hash of the tree ordered by right id
-	my $LeftTreeHash = {}; #A hash of the tree ordered by left id
+	my $toc = Time::HiRes::time;
+	print STDERR "Time taken to build the Non-BioPerl SQL Tree Cache hash:".($toc-$tic)."seconds\n";
 	
-	my $dbh = dbConnect();
-	
-	my $sth = $dbh->prepare("SELECT left_id,right_id,edge_length,nodename FROM tree WHERE left_id >= ? AND right_id <= ?;");
-	$sth->execute($rootleft,$rootright);
-	
-	while (my ($leftid,$rightid,$edge_length,$nodename) = $sth->fetchrow_array() ){
-	
-		my $NewickClade = 'NULL'; #The calde below this node in newick format - initialise with a default value
-		
-		my $NodeData = [$nodename,$edge_length,$NewickClade];
-		
-		$RightTreeHash->{$rightid} = [$leftid,$NodeData];
-		$LeftTreeHash->{$leftid} = [$rightid,$NodeData];
-	}
-	
-	my $NextGenLeftIDs = {};
-	my $CurrentGenLeftIDs = [];
-	
-	my $TreeLeftIDs; 
-	map{$TreeLeftIDs->{$_}=undef}keys(%$LeftTreeHash);
-	
-	foreach my $leftid (keys(%$TreeLeftIDs)){
-		
-		my $rightid = $LeftTreeHash->{$leftid}[0];
-		
-		if ($rightid == ($leftid+1)){ #if node is a leaf
-				
-			no warnings 'uninitialized';	
-				
-			my ($nodename,$edge_length,$NewickClade) = @{$LeftTreeHash->{$leftid}[1]};
-				
-			my $NewickString = $nodename.":".$edge_length;
-			$LeftTreeHash->{$leftid}[1][2] = $NewickString; #Update old newick string from 'NULL' to correct value
-			$RightTreeHash->{$rightid}[1][2] = $NewickString;
-		
-			delete($TreeLeftIDs->{$leftid});
-		}	
-	}
-	
-	#Initilise leaf nodes with values
-	#(possibility of additional functionality - exclude a list of genomes)
-		
-	while (scalar(keys(%$TreeLeftIDs))){
-
-		foreach my $leftid (keys(%$TreeLeftIDs)) {
-			
-			my $rightid = $LeftTreeHash->{$leftid}[0];
-			
-			my ($LeftNewick,$RightNewick) = ('NULL','NULL');
-			$LeftNewick = $LeftTreeHash->{$leftid+1}[1][2] if (exists($LeftTreeHash->{$leftid+1}));
-			$RightNewick = $RightTreeHash->{$rightid-1}[1][2] if (exists($RightTreeHash->{$rightid-1}));
-			#Extract the newick format trees of the nodes to the left and right descending edges away from this node
-									
-			if($LeftNewick ne 'NULL' && $RightNewick ne 'NULL'){
-				
-				#Aggregate two nodes below this one into a newick format
-				my $edge_length = $LeftTreeHash->{$leftid}[1][1];
-				my $NewickString = "(".$LeftNewick.",".$RightNewick."):".$edge_length;
-				$LeftTreeHash->{$leftid}[1][2] = $NewickString; #Update old newick string
-				$RightTreeHash->{$rightid}[1][2] = $NewickString;
-							
-			}
-					
-			delete($TreeLeftIDs->{$leftid}) if($LeftTreeHash->{$leftid}[1][2] ne 'NULL');	
-		}	
-	}
-	
-	##Ugly!
-	my $FullTree = $LeftTreeHash->{$rootleft}[1][2];
-	$FullTree="(".$FullTree.");";
-	$LeftTreeHash->{$rootleft}[1][2]=$FullTree;
-	$FullTree = $RightTreeHash->{$rootright}[1][2];
-	$FullTree="(".$FullTree.");";
-	$RightTreeHash->{$rootright}[1][2]=$FullTree;
-	#Above is to correct the final trees created in the resulting hashes.
-	
-	return($RightTreeHash,$LeftTreeHash);
-		foreach my $leftid (keys(%$TreeLeftIDs)) {
-			
-			my $rightid = $LeftTreeHash->{$leftid}[0];
-			
-			my ($LeftNewick,$RightNewick) = ('NULL','NULL');
-			$LeftNewick = $LeftTreeHash->{$leftid+1}[1][2] if (exists($LeftTreeHash->{$leftid+1}));
-			$RightNewick = $RightTreeHash->{$rightid-1}[1][2] if (exists($RightTreeHash->{$rightid-1}));
-			#Extract the newick format trees of the nodes to the left and right descending edges away from this node
-									
-			if($LeftNewick ne 'NULL' && $RightNewick ne 'NULL'){
-				
-				#Aggregate two nodes below this one into a newick format
-				my $edge_length = $LeftTreeHash->{$leftid}[1][1];
-				my $NewickString = "(".$LeftNewick.",".$RightNewick."):".$edge_length;
-				$LeftTreeHash->{$leftid}[1][2] = $NewickString; #Update old newick string
-				$RightTreeHash->{$rightid}[1][2] = $NewickString;
-							
-			}
-					
-			delete($TreeLeftIDs->{$leftid}) if($LeftTreeHash->{$leftid}[1][2] ne 'NULL');	
-		}	
-	}
-	
-	##Ugly!
-	my $FullTree = $LeftTreeHash->{$rootleft}[1][2];
-	$FullTree="(".$FullTree.");";
-	$LeftTreeHash->{$rootleft}[1][2]=$FullTree;
-	$FullTree = $RightTreeHash->{$rootright}[1][2];
-	$FullTree="(".$FullTree.");";
-	$RightTreeHash->{$rootright}[1][2]=$FullTree;
-	#Above is to correct the final trees created in the resulting hashes.
-	
-	return($RightTreeHash,$LeftTreeHash);
+	return($SQLTreeCacheHash);
 }
 
 =pod
-=item *SQL2Newick(root left id, root right id)
+=item *supfamSQL2TreeHash(root left id, root right id)
 
-Given the left_id and the right_id of a node, this will return the tree stored in SUPERFAMILY under that node in the tree table as a newick string.
-Both right and left ids need to be specified so as to prevent the all to easy error choosing the wrong node as the root. Returns two hashes: one has
-keys of left_ids and which hash to: $LeftHash->{leftid}=[rightid,[($SQLnodename,$edge_length,$CladeAsNewickString)]]. The other hash is the same but with 
-rightids.
+Given the left_id and the right_id of a node, this will return the tree stored in SUPERFAMILY under that node in the tree table as a TreeHash, which can be written to a string if you like.
+Both right and left ids need to be specified so as to prevent the all to easy error choosing the wrong node as the root. Returns a hash with similar structure to BuildTreeCacheHash.
+
+Cruciially, the tree is a binary tree only! Hence there are left and right id entries
+
+Each node is stored as follows $TreeHash->{Node key}
+There is then a variety of values stored:
+$SQLTreeCacheHash->{NodeID}{'all_Descendents'} - All Node keys of nodes below this one, stored as a hash {node}=undef to allow for quick querying
+$SQLTreeCacheHash->{NodeID}{'each_Descendent'} - The direct descendents of this node
+$SQLTreeCacheHash->{NodeID}{'Clade_Leaves'} - All the leaf nodes below this one, stored as a hash {leaf}=undef to allow for quick querying
+$SQLTreeCacheHash->{NodeID}{'branch_length'} - The lengDolloParsimonyAncestralStateth of the branch connecting this node to it's parent
+$SQLTreeCacheHash->{NodeID}{'is_Leaf'} - 1/0 flag for if the node is a leaf
+$SQLTreeCacheHash->{NodeID}{'ancestor'} - BioPerl reference of nodes parent
+$SQLTreeCacheHash->{NodeID}{'node_id'}='Node name' as given in the input newick file
+$SQLTreeCacheHash->{NodeID}{'left_id'} = node left id
+$SQLTreeCacheHash->{NodeID}{'right_id'} = node right id
+
+$TreeCacheHash->{$node}{'Total_branch_lengths'}  - the total branch length of the clade beneath this node
+$TreeCacheHash->{$MRCA}{'Probability_Hash'}={ clade point => nodeID} - clade point is the point in the clade beneath the MRCA node which this node sits
+$TreeCacheHash->{$MRCA}{'node_id'}='Node name' as given in the SQL table
+
+The Node Keys are the left ids of the tree, but it is more reliable to use the $SQLTreeCacheHash->{NodeID}{'left_id'} entry in case the keys of the hash have been mucked about with
 
 This function only deals with binary trees, as in SUPERFAMIY.
+
 =cut
+
+sub normailseSQLTreeHashBranchForDeletions($){
+	
+	my ($SQLTreeCacheHash) = @_;
+	
+	my @NodeIDs = (keys(%$SQLTreeCacheHash)); #Explicit way of extracting left ids of all the 
+	
+	map{die "Use this subroutine on an SQL treehash, created using supfamSQL2TreeHash\n" unless (exists($SQLTreeCacheHash->{$_}{'left_id'})) }@NodeIDs;
+	#Error checking
+	
+	my $dbh = dbConnect();
+	
+	my $sth = $dbh->prepare("SELECT ancestral_info.comb_deleted FROM tree JOIN ancestral_info ON tree.left_id = ancestral_info.left_id WHERE tree.left_id = ?;");
+	
+	foreach my $CladeNode (@NodeIDs){
+		
+		my $NodeLeftID = $SQLTreeCacheHash->{$CladeNode}{'left_id'};
+		$sth->execute($NodeLeftID);
+		
+		my ($DeletionsAlongBranch) = $sth->fetchrow_array();
+		
+		print $NodeLeftID."  <- Left ID  ".$DeletionsAlongBranch."  <- Deletions\n";
+		
+		$SQLTreeCacheHash->{$CladeNode}{'branch_length'}=$DeletionsAlongBranch;
+		$sth->finish();
+	}
+	
+	dbDisconnect($dbh);
+	
+	return(1);
+}
+
+=pod
+=item * BuildTreeCacheHash($NewickTreeString)
+
+
+
+=cut
+
+
 
 sub BuildTreeCacheHash($){
 	
@@ -371,7 +335,7 @@ $SubcladeRegex= qr{ #Example string: ^(C:0.3,D:0.4):0.5$
 }x;
 
 
-our $UngroupedSubcladeRegex;#Have to predeclare else variable wont be in scope (it calls itself)
+our $UngroupedSubcladeRegex; #Have to predeclare else variable wont be in scope (it calls itself)
 $UngroupedSubcladeRegex= qr{
 	(?:
 		(
@@ -383,8 +347,6 @@ $UngroupedSubcladeRegex= qr{
 	)
  }x;
 
-
-	
 if($NewickString =~ m/;$/){ #Deal with full newick strings - so close to at the root (even if we are dealign with an unrooted tree!)
 
 	if($NewickString =~ m/^\(?($SubcladeRegex)\)?;$/){

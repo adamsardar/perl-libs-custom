@@ -305,7 +305,7 @@ sub BuildTreeCacheHash($){
 		$TreeCacheHash->{$node}{'branch_length'} = 0 if ($node eq $root);
 		
 		print STDERR "Node id:".$TreeCacheHash->{$node}{'node_id'}." - branch length of zero found, introducing a pseudocount of 0.000001\n"  if ($Branch ~~ 0 && $node ne $root);				
-		$Branch = 0.000001 if ($Branch ~~ 0 && $node ne $root); 
+		$Branch = 0.00000001 if ($Branch ~~ 0 && $node ne $root); 
 		
 		$TreeCacheHash->{$node}{'branch_length'} = $Branch ;
 		
@@ -724,8 +724,6 @@ sub TreeHash2Newick($$){
 
 	my ($TreeCacheHash,$DesiredRoot) = @_;
 
-	print "Root: ".$DesiredRoot."\n";
-
 	my $CladeNodes = $TreeCacheHash->{$DesiredRoot}{'all_Descendents'};
 	my @rootDescendents = @{$TreeCacheHash->{$DesiredRoot}{'each_Descendent'}};;
 	push(@$CladeNodes,$DesiredRoot) unless(scalar(@rootDescendents) == 1);
@@ -771,6 +769,8 @@ sub TreeHash2Newick($$){
 				
 				#Aggregate two nodes below this one into a newick format
 				my ($nodename,$edge_length) = ($TreeCacheHash->{$node}{'node_id'},$TreeCacheHash->{$node}{'branch_length'});
+				
+				$edge_length = 0 if($node eq $DesiredRoot);
 				
 				my $NewickString = "(".$Descendent1NewickClade.",".$Descendent2NewickClade.")".$nodename.":".$edge_length;
 				$TreeCacheHash->{$node}{'Newick_clade'} = $NewickString; #Update old newick string from 'NULL' to correct value
