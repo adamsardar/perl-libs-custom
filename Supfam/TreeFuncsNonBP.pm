@@ -51,6 +51,7 @@ our @EXPORT    = qw(
 			RootByOutgroup
 			RootOnInternalNode
 			AllAncestors
+			sanitise_TreeHash
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -688,23 +689,26 @@ You can specify how you want the tree using $branchesflag (1 - include branch le
 
 =cut
 
-sub Splice_Node($$){
+sub Splice_Node($$$){
 	
-	my ($TreeHash,$Node2Splice) = @_;
+	my ($TreeHash,$Node2Splice,$root) = @_;
 	
 	my $Ancestor = $TreeHash->{$Node2Splice}{'ancestor'};
 	my @Descendants = @{$TreeHash->{$Node2Splice}{'each_Descendent'}};
 	
-	die "Can't Splice_midpoint on root - use Splice_Root for that\n" if($Ancestor eq 'ROOT');
+	die "Can't Splice_Node on root - use Splice_Root for that\n" if($Ancestor eq 'ROOT');
 
-	@{$TreeHash->{$Ancestor}{'each_Descendent'}} = grep{!/$Node2Splice/}@{$TreeHash->{$Ancestor}{'each_Descendent'}};
+	@{$TreeHash->{$Ancestor}{'each_Descendent'}} = grep{$_ ne $Node2Splice}@{$TreeHash->{$Ancestor}{'each_Descendent'}};
 	#Remove $Node2Splice from ancesotrs 'each_Descendant array record
 
 	foreach my $SingleDescendant (@Descendants){
 	
+	unless ($TreeHash->{$SingleDescendant}{'branch_length'} ~~ undef){
+	
 		my $TotalBranchLength = ($TreeHash->{$SingleDescendant}{'branch_length'}) + ($TreeHash->{$Node2Splice}{'branch_length'});
-
 		$TreeHash->{$SingleDescendant}{'branch_length'} = $TotalBranchLength;
+	}
+	
 		$TreeHash->{$SingleDescendant}{'ancestor'} = $Ancestor; #i.e. change the ancestor of the descendant to the parent node.
 	
 		push(@{$TreeHash->{$Ancestor}{'each_Descendent'}},$SingleDescendant); #Add single_descendant onto the ancesotrs direct descendants list
@@ -712,21 +716,15 @@ sub Splice_Node($$){
 	
 	
 	#Remove $Node2Splice from all of it's ancestors 'all_descendants' arrays
-	my $IncrementalAncestor = $Ancestor;
 	
-	while ($IncrementalAncestor ne 'ROOT'){
+	foreach my $IncrementalAncestor (@{$TreeHash->{$root}{'all_Descendents'}},$root){
 		
-		my $AllDescendants = $TreeHash->{$IncrementalAncestor}{'all_Descendents'};
-		@$AllDescendants = grep{!/$Node2Splice/}$AllDescendants;
+		@{$TreeHash->{$IncrementalAncestor}{'all_Descendents'}} = grep{$_ ne $Node2Splice}@{$TreeHash->{$IncrementalAncestor}{'all_Descendents'}};
 		
-		@{$TreeHash->{$IncrementalAncestor}{'Clade_Leaves'}} = grep{!/$Node2Splice/}@{$TreeHash->{$IncrementalAncestor}{'Clade_Leaves'}} if($TreeHash->{$IncrementalAncestor}{'is_Leaf'});
+		@{$TreeHash->{$IncrementalAncestor}{'Clade_Leaves'}} = grep{$_ ne $Node2Splice}@{$TreeHash->{$IncrementalAncestor}{'Clade_Leaves'}} unless($TreeHash->{$IncrementalAncestor}{'is_Leaf'});
 		#Removes Leaf entries if the node being spliced is a leaf
-		
-		$IncrementalAncestor = $TreeHash->{$IncrementalAncestor}{'ancestor'};
 	}
 	
-	
-			
 	delete $TreeHash->{$Node2Splice}; #Finally, delete the spliced hash node
 	
 	return(1);
@@ -736,6 +734,31 @@ sub Splice_Node($$){
 =item *Splice_Node($TreeHash,$Node2Splice)
 
 Removes a non-root node (regardless of the degree of the node). Branch lengths are updated accordingly, as are 'ancestor', 'each_Descendant' and 'all_Decendants' entries.
+
+=cut
+
+sub sanitise_TreeHash($$){
+	
+	my ($TreeHash,$root) = @_;
+	
+	#This will be an evolving function.Good practice will be to call this on any function that modifies a tree object
+	
+	my @InternalTreeNodes = grep{! $TreeHash->{$_}{'is_Leaf'}}@{$TreeHash->{$root}{'all_Descendents'}};
+	
+	foreach my $NonRootInternalNode (@InternalTreeNodes){
+		
+		my $NumberOfDescendents = scalar(@{$TreeHash->{$NonRootInternalNode}{'each_Descendent'}});
+		Splice_Node($TreeHash,$NonRootInternalNode,$root) if($NumberOfDescendents == 1); #i.e if the node one has one ancestor (is a pointless node), remove it
+		print STDERR "Spliced $NonRootInternalNode \n" if($NumberOfDescendents == 1); 
+	}
+	
+	return(1);
+}
+
+=pod
+=item *sanitise_TreeHash($TreeHash,$root)
+
+Tidies up tree, removing (splicing) any non-leaf nodes with only a single descendent.
 
 =cut
 
