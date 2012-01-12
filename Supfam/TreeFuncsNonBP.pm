@@ -748,8 +748,9 @@ sub sanitise_TreeHash($$){
 	foreach my $NonRootInternalNode (@InternalTreeNodes){
 		
 		my $NumberOfDescendents = scalar(@{$TreeHash->{$NonRootInternalNode}{'each_Descendent'}});
-		Splice_Node($TreeHash,$NonRootInternalNode,$root) if($NumberOfDescendents == 1); #i.e if the node one has one ancestor (is a pointless node), remove it
+		Splice_Node($TreeHash,$NonRootInternalNode,$root) if($NumberOfDescendents == 1 || $NumberOfDescendents == 0); #i.e if the node one has one ancestor (is a pointless node), remove it
 		print STDERR "Spliced $NonRootInternalNode \n" if($NumberOfDescendents == 1); 
+		print STDERR "Removed $NonRootInternalNode \n" if($NumberOfDescendents == 0); 
 	}
 	
 	return(1);
