@@ -693,6 +693,7 @@ sub Splice_Node($$$){
 	
 	my ($TreeHash,$Node2Splice,$root) = @_;
 	
+	
 	my $Ancestor = $TreeHash->{$Node2Splice}{'ancestor'};
 	my @Descendants = @{$TreeHash->{$Node2Splice}{'each_Descendent'}};
 	
@@ -720,7 +721,6 @@ sub Splice_Node($$$){
 	foreach my $IncrementalAncestor (@{$TreeHash->{$root}{'all_Descendents'}},$root){
 		
 		@{$TreeHash->{$IncrementalAncestor}{'all_Descendents'}} = grep{$_ ne $Node2Splice}@{$TreeHash->{$IncrementalAncestor}{'all_Descendents'}};
-		
 		@{$TreeHash->{$IncrementalAncestor}{'Clade_Leaves'}} = grep{$_ ne $Node2Splice}@{$TreeHash->{$IncrementalAncestor}{'Clade_Leaves'}} unless($TreeHash->{$IncrementalAncestor}{'is_Leaf'});
 		#Removes Leaf entries if the node being spliced is a leaf
 	}
@@ -734,30 +734,47 @@ sub Splice_Node($$$){
 =item *Splice_Node($TreeHash,$Node2Splice)
 
 Removes a non-root node (regardless of the degree of the node). Branch lengths are updated accordingly, as are 'ancestor', 'each_Descendant' and 'all_Decendants' entries.
+Can be used on tree leaves as well.
 
 =cut
 
-sub sanitise_TreeHash($$){
+sub sanitise_TreeHash{
 	
-	my ($TreeHash,$root) = @_;
+	my ($TreeHash,$root,$verbose) = @_;
+	
+	$verbose = 1 if ($verbose ~~ undef);
+	
 	
 	#This will be an evolving function.Good practice will be to call this on any function that modifies a tree object
 	
-	my @InternalTreeNodes = grep{! $TreeHash->{$_}{'is_Leaf'}}@{$TreeHash->{$root}{'all_Descendents'}};
+	my @InternalTreeNodes;
 	
-	foreach my $NonRootInternalNode (@InternalTreeNodes){
+	my $Changes =1;
+	
+	while ($Changes){
+	
+	$Changes=0; #Changes tracks if there has been any changes to the tree, allowing us to check again and see if we need to sanitise more nodes
+	@InternalTreeNodes = grep{! $TreeHash->{$_}{'is_Leaf'}}@{$TreeHash->{$root}{'all_Descendents'}};
 		
-		my $NumberOfDescendents = scalar(@{$TreeHash->{$NonRootInternalNode}{'each_Descendent'}});
-		Splice_Node($TreeHash,$NonRootInternalNode,$root) if($NumberOfDescendents == 1 || $NumberOfDescendents == 0); #i.e if the node one has one ancestor (is a pointless node), remove it
-		print STDERR "Spliced $NonRootInternalNode \n" if($NumberOfDescendents == 1); 
-		print STDERR "Removed $NonRootInternalNode \n" if($NumberOfDescendents == 0); 
+		foreach my $NonRootInternalNode (@InternalTreeNodes){
+			
+			my $NumberOfDescendents = scalar(@{$TreeHash->{$NonRootInternalNode}{'each_Descendent'}});
+			Splice_Node($TreeHash,$NonRootInternalNode,$root) if($NumberOfDescendents == 1 || $NumberOfDescendents == 0); #i.e if the node one has one ancestor (is a pointless node), remove it
+			
+			if($verbose){
+				print STDERR "Spliced $NonRootInternalNode \n" if($NumberOfDescendents == 1); 
+				print STDERR "Removed $NonRootInternalNode \n" if($NumberOfDescendents == 0); 
+			}
+			
+			$Changes++ if($NumberOfDescendents == 1 || $NumberOfDescendents == 0);
+		}
 	}
 	
 	return(1);
 }
 
 =pod
-=item *sanitise_TreeHash($TreeHash,$root)
+=item *sanitise_TreeHash($TreeHash,$root,$verboseflag)
 
 Tidies up tree, removing (splicing) any non-leaf nodes with only a single descendent.
 
@@ -983,35 +1000,30 @@ which should be an array ref.
 =cut
 
 
-sub TreeIntersection($$$){
+sub TreeIntersection{
 	
-	my ($treeAio,$treeBio,$verboseintersection) = @_;
+	my ($treeAstring,$treeBstring,$verboseintersection) = @_;
 	 #Using IO::String to create io hadles for the newick strings. Do this externally to this function using my $io = IO::String->new($string);
 	#$verboseintersection is a flag for printing out a whole load of info regarding the trees and which nodes intersect.
 	
-	die "Sub undergoing a rewrite so as to leave the bioperl paradigm\n";
+	$verboseintersection = 1 if ($verboseintersection ~~ undef);
+	
+	my ($Aroot,$TreeAObject) = BuildTreeCacheHash($treeAstring);
+	my ($Broot,$TreeBObject) = BuildTreeCacheHash($treeBstring);
+	
+	my @Ataxa = map{$TreeAObject->{$_}{'node_id'}}@{$TreeAObject->{$Aroot}{'Clade_Leaves'}};
+	my @Btaxa = map{$TreeBObject->{$_}{'node_id'}}@{$TreeBObject->{$Broot}{'Clade_Leaves'}};
+	
+	if($verboseintersection){
+	
+		print STDERR "Tree A leaves: [".scalar(@Ataxa)."] \n";
+		print STDERR join(',',sort(@Ataxa));
+		print STDERR "\n";
 		
-	my $input = new Bio::TreeIO(-fh   => $treeAio,
-	                            -format => "newick") or die $!;
-	                            
-	my $TreeAObject = $input->next_tree;
-	
-	$input = new Bio::TreeIO(-fh   => $treeBio,
-	                         -format => "newick") or die $!;
-	
-	my $TreeBObject = $input->next_tree;
-	#Forgive the use of A and B as identifiers. I feel that this is the best way to differentiate between two very similiar objects.
-	
-	my @Ataxa = map{$_->id}$TreeAObject->get_leaf_nodes;
-	my @Btaxa = map{$_->id}$TreeBObject->get_leaf_nodes;
-	
-	print STDERR "Tree A leaves: [".scalar(@Ataxa)."] \n";
-	print STDERR join(',',sort(@Ataxa));
-	print STDERR "\n";
-	
-	print STDERR "Tree B leaves: [".scalar(@Btaxa)."] \n";
-	print STDERR join(',',sort(@Btaxa));
-	print STDERR "\n";
+		print STDERR "Tree B leaves: [".scalar(@Btaxa)."] \n";
+		print STDERR join(',',sort(@Btaxa));
+		print STDERR "\n";
+	}
 	
 	my ($Union,$Intersection,$ListAExclusive,$ListBExclusive) = IntUnDiff(\@Ataxa,\@Btaxa);
 	
@@ -1020,44 +1032,18 @@ sub TreeIntersection($$$){
 	#A Remove
 	foreach my $ANodeToRemove (@$ListAExclusive){
 		
-		my $NodeID = $TreeAObject->find_node(-id => $ANodeToRemove);
-		$TreeAObject->remove_Node($NodeID);
+		Splice_Node($TreeAObject,$ANodeToRemove,$Aroot);
 	}
-	
-	#Tidy up tree and remove 'dangling branches'
-	
-	my @DanglingNodes = grep{$_->is_Leaf}$TreeAObject->find_node(-id => '');
-	
-	while (scalar(@DanglingNodes) > 0 ){
-	
-		foreach my $DanglingNode (@DanglingNodes){
-	
-			$TreeAObject->remove_Node($DanglingNode);
-		}
-			
-		@DanglingNodes = grep{$_->is_Leaf}$TreeAObject->find_node(-id => '');
-	}
-	
+		
 	#Bremove
 	foreach my $BNodeToRemove (@$ListBExclusive){
 		
-		my $NodeID = $TreeBObject->find_node(-id => $BNodeToRemove);
-		$TreeBObject->remove_Node($NodeID);
+		Splice_Node($TreeBObject,$BNodeToRemove,$Broot);
 	}
 	
-	#Tidy up tree and remove 'dangling branches'
-	
-	@DanglingNodes = grep{$_->is_Leaf}$TreeBObject->find_node(-id => '');
-	
-	while (scalar(@DanglingNodes) > 0 ){
-	
-		foreach my $DanglingNode (@DanglingNodes){
-	
-			$TreeBObject->remove_Node($DanglingNode);
-		}
-			
-		@DanglingNodes = grep{$_->is_Leaf}$TreeBObject->find_node(-id => '');
-	}
+	#Sanitise trees
+	sanitise_TreeHash($TreeAObject,$Aroot,$verboseintersection);
+	sanitise_TreeHash($TreeBObject,$Broot,$verboseintersection);
 	
 	# Output tree descriptions
 	
@@ -1070,20 +1056,20 @@ sub TreeIntersection($$$){
 		$OutString = join(',',@$ListAExclusive);
 		print STDERR $OutString."\n";
 		
-		print STDERR "Output A Tree leaves: (".scalar($TreeAObject->get_leaf_nodes).")\n";
-		$OutString = join(',',sort(map{$_->id}$TreeAObject->get_leaf_nodes));
+		print STDERR "Output A Tree leaves: (".scalar(@{$TreeAObject->{$Aroot}{'Clade_Leaves'}}).")\n";
+		$OutString = join(',',sort(map{$TreeAObject->{$_}{'node_id'}}@{$TreeAObject->{$Aroot}{'Clade_Leaves'}}));
 		print STDERR $OutString."\n";
 		
 		print STDERR "Tree B Tree Unique leaves: (".scalar(@$ListBExclusive).")\n";
 		$OutString = join(',',@$ListBExclusive);
 		print STDERR $OutString."\n";
 		
-		print STDERR "Output B Tree leaves: (".scalar($TreeBObject->get_leaf_nodes).")\n";
-		$OutString = join(',',sort(map{$_->id}$TreeBObject->get_leaf_nodes));
+		print STDERR "Output B Tree leaves: (".scalar(@{$TreeBObject->{$Broot}{'Clade_Leaves'}}).")\n";
+		$OutString = join(',',sort(map{$TreeBObject->{$_}{'node_id'}}@{$TreeBObject->{$Broot}{'Clade_Leaves'}}));
 		print STDERR $OutString."\n";
 	}
 	
-	return($TreeAObject,$TreeBObject);	
+	return($TreeAObject,$Aroot,$TreeBObject,$Broot);	
 }
 
 =pod
