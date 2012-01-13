@@ -8,7 +8,9 @@ Supfam::TreeFuncsNonBP
 =head1 SYNOPSIS
 
 Holds functions related to parsing Newick trees and calculating domain architecture information 
-This is a branch from the TreeFuncs.pm but with the intention of it being written in pure perl - i.e. no bioperl! It doesn't really add all that much except cut down on dependencies and increase code transparency
+This is a branch from the TreeFuncs.pm but with the intention of it being written in pure perl - i.e. no bioperl!
+
+It doesn't really add all that much except cut down on dependencies and increase code transparency. And it's faster! And Julian doesn't hate it!
 
 use Supfam::TreeFuncsNonBP;
 
@@ -30,6 +32,9 @@ Supfam::Config.pm
 
 our @ISA       = qw(Exporter AutoLoader);
 our @EXPORT    = qw(
+			assignLeftRightIDs2TreeHash
+			isrootedbinary_TreeHash
+			recursivelyassigneLeftRightids
 			CalculateLineage
 			ExtractSubtree
 			FindTrueRoot
@@ -1191,6 +1196,91 @@ Quick function to find the leaves beneath a node ($root) that posses a given tra
 To be used after adding data to TreeCacheHAsh using RAxML Marginal Probabilities Parser
 =cut
 
+
+sub assignLeftRightIDs2TreeHash($$){
+	
+	my ($TreeCacheHash,$root) = @_;
+	
+	#Test for binary tree
+	
+	my $is_binary = isrootedbinary_TreeHash($TreeCacheHash,$root);
+	
+	if($is_binary){
+	
+		recursivelyassigneLeftRightids($TreeCacheHash,$root,0);
+	
+	}else{
+	
+		die "Tree is non-binary, so you cannot assign left and right ids to it!\n";
+	}
+	
+	return(1); #A list of leaves with the trait of interest, provided in the arguments
+}
+
+=pod
+=item *assignLeftRightIDs2TreeHash($TreeHash,$root)
+
+Given a treehash, this function will test that it is a rooted binary tree and then assign left and right ids to the tree. 
+
+TODO (Consider a function for non-binary trees at a later date based on natural number indexing)
+
+Creates or reassigns two $TreeHash entries:
+
+$TreeCacheHash->{NodeID}{'left_id'} = node left id
+$TreeCacheHash->{NodeID}{'right_id'} = node right id
+
+=cut
+
+sub recursivelyassigneLeftRightids{
+	
+	my ($TreeCacheHash,$Node,$id_count) = @_;
+		
+	my @Descendets = @{$TreeCacheHash->{$Node}{'each_Descendent'}};
+	
+	#Assign left id
+	$TreeCacheHash->{$Node}{'left_id'} = $id_count++;
+	
+	foreach my $Descendent (@Descendets){
+		
+		$id_count = recursivelyassigneLeftRightids($TreeCacheHash,$Descendent,$id_count);
+	}
+	
+	#Assign_right_id
+	$TreeCacheHash->{$Node}{'right_id'} = $id_count++;
+	
+	return($id_count);
+}
+
+
+=pod
+=item *recursivelyassigneLeftRightids($TreeHash,$root)
+
+Don't call directly. This is a recursive function for numbering left and right ids to a binary tree as a treehash. Use assignLeftRightIDs2TreeHash.
+
+=cut
+
+sub isrootedbinary_TreeHash($$){
+	
+	my ($TreeCacheHash,$root) = @_;
+		
+	my @NonLeafNodes = grep{! $TreeCacheHash->{$_}{'is_Leaf'}}(@{$TreeCacheHash->{$root}{'each_Descendent'}},$root);
+	
+	my $is_binary = 1;	
+	
+	foreach my $InternalNode (@NonLeafNodes){
+		
+		$is_binary = 0 if(scalar(@{$TreeCacheHash->{$InternalNode}{'each_Descendent'}}) != 2);
+	}
+
+	return($is_binary);
+}
+
+=pod
+=item *isrootedbinary_TreeHash($TreeHash,$root)
+
+Simply tests if a tree stored within a treehash is a rooted binary tree (all nodes have two descendents except for leaves)
+
+=cut
 
 1;
 
