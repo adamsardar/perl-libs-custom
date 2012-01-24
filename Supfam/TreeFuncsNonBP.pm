@@ -207,7 +207,7 @@ sub normailseSQLTreeHashBranchForDeletions($){
 		
 		my ($DeletionsAlongBranch) = $sth->fetchrow_array();
 		
-		print $NodeLeftID."  <- Left ID  ".$DeletionsAlongBranch."  <- Deletions\n";
+		print STDERR $NodeLeftID."  <- Left ID  ".$DeletionsAlongBranch."  <- Deletions\n";
 		
 		$SQLTreeCacheHash->{$CladeNode}{'branch_length'}=$DeletionsAlongBranch;
 		$sth->finish();
