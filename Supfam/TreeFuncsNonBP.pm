@@ -316,10 +316,6 @@ sub Newick2Node{
 	$Ancestor = 'ROOT' if (@_ < 3); #If $Ancestor isn't set, we shall assume that it's the root of the tree
 
 
-##
-print "$NewickString\n";
-###
-
 ##Construct regexes that parse the newick format - these took a day to make!! I could move these outside of this sub, but speed really isn't an issue.
 our $CladeREGEX;
 #Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$     or      (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
@@ -370,9 +366,6 @@ if($NewickString =~ m/;$/){ #Deal with full newick strings - so close to at the 
 			$NewickString = $NewickString.":0.00";
 		}
 		
-		##
-	print "$NewickString\n";
-	###
 		Newick2Node($NewickString, $TreeHash,'ROOT');
 		
 		return($NewickString); #i.e. returns the root of the tree node in the hash
@@ -406,10 +399,6 @@ my $All_Descendants_Array_Ref = []; #Decendants will be stored as an array ref
 		
 		my @DirectDescendentClades;
 		
-		##
-print "$NewickString\n";
-###
-		
 		while($DescendentString =~ m/$UngroupedSubcladeRegex/g){push(@DirectDescendentClades,$1)};
 
 		$TreeHash->{$NewickString}{'each_Descendent'} = \@DirectDescendentClades;
@@ -429,11 +418,7 @@ print "$NewickString\n";
 		#$NewickString =~ m/^(\w+):?(\d+\.?\d+(?:[eE][-+][0-9]+)?)?$/)
 		
 		my ($NodeName,$Branchlength) = ($1,$2);
-		
-		##
-		print "$NewickString\n";
-		###
-		
+
 		$TreeHash->{$NewickString}{'is_Leaf'} = 1;
 		$TreeHash->{$NewickString}{'branch_length'} = $Branchlength;
 		$TreeHash->{$NewickString}{'node_id'} = $NodeName;
@@ -446,9 +431,6 @@ print "$NewickString\n";
 		die "Cannot parse tree string. Perhaps the tree is in an unusual format? $NewickString \n";	
 	}
 	
-	##
-print "$NewickString\n";
-###
 	
 	return($All_Descendants_Array_Ref);
 }

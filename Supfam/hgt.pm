@@ -530,6 +530,23 @@ A deletion model based on the poisson distribution of deletion events. Using the
 we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
 =cut
 
+sub calculatePosteriorQuantiles($$){
+	#Removed the prototyping - be careful
+
+	
+	my () = @_;
+
+	my $score;
+
+	return($score);
+}
+
+
+=pod * PositiveDomArchObservations
+This is a sub to calculate the likelihood of a node containing the domain architecture in question, given previous observations (stored in $LHHash).
+=cut
+
+
 sub PositiveDomArchObservations{
 	#Removed the prototyping - be careful
 
@@ -590,7 +607,6 @@ sub NegativeDomArchObservations{
 	
 	return($NodeLH);
 }
-
 
 =pod * NegativeDomArchObservations
 This is a sub to calculate the likelihood of a node containing the domain architecture in question, given previous observations (stored in $LHHash). Note the difference between these two functions:
