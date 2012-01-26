@@ -36,6 +36,7 @@ our @EXPORT    = qw(
 				DeletedPoisson
 				RandomModelPoisson
 				RandomModelCorrPoisson
+				calculatePosteriorQuantile
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -46,6 +47,7 @@ use Bio::TreeIO;
 
 use Bio::Tree::TreeFunctionsI;
 use Time::HiRes;
+use POSIX qw(floor);
 use Math::Random;
 use Math::Random qw(random_poisson);
 
@@ -519,7 +521,7 @@ sub RandomModelJulianOpt($$$$$) {
 	}
 	
 	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
-		
+
 	return($SelftestValue,$distribution,$RawResults);
 }
 
@@ -530,20 +532,84 @@ A deletion model based on the poisson distribution of deletion events. Using the
 we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
 =cut
 
-sub calculatePosteriorQuantiles($$){
+sub calculatePosteriorQuantile($%$){
 	#Removed the prototyping - be careful
-
 	
-	my () = @_;
+#	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
+#		
+#	$DistributionHash->{$SingleValue}++;
+#	$NumberOfSimulations++;
+#	
+#	my $PosteriorQuantile;
+#	
+#	my @SortedDistributionIndicies = sort(keys(%$DistributionHash));
+#	
+#	while(my $Distribution_index = pop(@SortedDistributionIndicies)){
+#		
+#		last unless ($SingleValue > $Distribution_index);
+#		
+#		$PosteriorQuantile += $DistributionHash->{$Distribution_index} ;
+#	}
+#	
+#	$PosteriorQuantile += floor(rand($DistributionHash->{$SingleValue}));
+#	
+#	$PosteriorQuantile = $PosteriorQuantile/$NumberOfSimulations;
+#	
+#	return($PosteriorQuantile);
 
-	my $score;
 
-	return($score);
+my ($SingleValue,%DistributionHash,$NumberOfSimulations,$CladeSize) = @_;
+
+my $ii=0;
+my $jj;
+my %Results;
+
+for $i (0 .. $CladeSize){
+if ($i == $SingleValue){
+  if (exists($distribution{$i})){
+$jj=$ii+1;
+for (1 .. $distribution{$i}){
+  if (exists($results{$jj})){
+$results{$jj}=$results{$jj}+1/$distribution{$i};$average=$average+$jj/$distribution{$i};
+}
+else{
+$results{$jj}=1/$distribution{$i};$average=$average+$jj/$distribution{$i};
+}
+$jj++;
+}
+}
+else{
+  if (exists($results{$ii})){
+$results{$ii}=$results{$ii}+0.5;
+}
+else{
+$results{$ii}=0.5;
+}
+  if (exists($results{($ii+1)})){
+$results{($ii+1)}=$results{($ii+1)}+0.5;
+}
+else{
+$results{($ii+1)}=0.5;
+}
+$average=$average+$ii;
+}
+last;
+}
+  if (exists($distribution{$i})){
+$ii=$ii+$distribution{$i};
+}
+}
+
+return($ii);
+
+
 }
 
 
-=pod * PositiveDomArchObservations
-This is a sub to calculate the likelihood of a node containing the domain architecture in question, given previous observations (stored in $LHHash).
+=pod * calculatePosteriorQuantile($SingleValue,$DistributionHash)
+
+Calculates where in the total area in a probability distribution a single value occurs. Returns a value between 0 and 1. These should be uniformly distributed, from the simple fact that sum(andy distribution)
+=1 and we are choosing a unifrom point from theis area.
 =cut
 
 
