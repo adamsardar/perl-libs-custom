@@ -65,18 +65,9 @@ use strict;
 use warnings;
 
 use DBI;
-
 use Supfam::Config;
 use Supfam::Utils;
 use Supfam::SQLFunc;
-
-use Bio::TreeIO;
-use Bio::Tree::TreeFunctionsI;
-use IO::String;
-use Time::HiRes;
-
-use Bio::Tree::TreeI;
-
 
 =pod
 =head2 Methods
