@@ -425,13 +425,6 @@ sub calculatePosteriorQuantile($$$$){
 	
 	my @DistributionIndicies = keys(%$DistributionHash);
 
-	
-#
-#	print Dumper($DistributionHash);
-#	print "\n";
-#	print $SingleValue;
-#	print "  Val\n";
-
 	foreach my $Number_of_genomes  (0 .. $CladeSize){
 		
 		if($SingleValue > $Number_of_genomes){
@@ -440,19 +433,15 @@ sub calculatePosteriorQuantile($$$$){
 		}
    }
 	
-	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of 
+	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
 	$NumberOfSimulationsLT += random_uniform(1,0,$Degeneracy);
 	
 	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
-
-	#my $PosteriorQuantile = random_uniform();
-	#$PosteriorQuantile += 0;
 	
 	$DistributionHash->{$SingleValue}--;
 	#Undo the modification to the distribution
 	
 	return($PosteriorQuantile);
-
 
 #my ($SingleValue,$hash,$NumberOfSimulations,$CladeSize) = @_;
 #
