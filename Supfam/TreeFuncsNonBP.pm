@@ -251,12 +251,19 @@ sub BuildTreeCacheHash($){
 #	EasyDump("./Treedraft",$TreeHash);
 	
 	if($BranchLengthsFlag){
-		
+							
+		foreach my $interanl_node (@{$TreeHash->{$root}{'all_Descendents'}},$root){
+			
+			$TreeHash->{$interanl_node}{'branch_length'} = 0 if ($interanl_node eq $root);
+			print STDERR "Node id:".$TreeHash->{$interanl_node}{'node_id'}." - branch length of zero found, introducing a pseudocount of 0.000001\n"  if ($TreeHash->{$interanl_node}{'branch_length'} ~~ 0 && $interanl_node ne $root);				
+			$TreeHash->{$interanl_node}{'branch_length'} = 0.00000001 if($TreeHash->{$interanl_node}{'branch_length'} ~~ 0 && $interanl_node ne $root); 	
+		}
+				
 		map{GenerateCladeTimeHash($_,$TreeHash)}(@{$TreeHash->{$root}{'all_Descendents'}},$root);
+	
 	}else{
 		
 		$TreeHash->{$root}{'branch_length'} = undef if($TreeHash->{$root}{'branch_length'}); #This is a hideous way to deal with the fact that it is possible for the root to have a branch length when no other node does.
-		
 		print STDERR "Branch lengths not specieifed in input tree\n";
 	}
 	#This adds two other key/value pairs:
@@ -306,43 +313,43 @@ sub Newick2Node{
 	
 	$Ancestor = 'ROOT' if (@_ < 3); #If $Ancestor isn't set, we shall assume that it's the root of the tree
 
-
-##Construct regexes that parse the newick format - these took a day to make!! I could move these outside of this sub, but speed really isn't an issue.
-our $CladeREGEX;
-#Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$     or      (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
-
-$CladeREGEX = qr{ 
-(?:
-		(
-		      (?: \w+ (?: :\d*\.?\d*(?:[eE][-+][0-9]+)?)?   )
-		  #Match simple clades of one item like: A:0.1 -  B:0.2
-		| 
-		     (:? \( (??{$CladeREGEX}) \) \w* (?: :\d*\.?\d*(?:[eE][-+][0-9]+)?)?   ) 
-		 #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
-		)
-			(?:  , (??{$CladeREGEX})  )?
-	)
-}x;
 	
-
-our $SubcladeRegex;
-#Have to predeclare else variable wont be in scope (it calls itself)
-$SubcladeRegex= qr{ #Example string: ^(C:0.3,D:0.4):0.5$
-		\( ((??{$CladeREGEX})) \) (\w*) (?: :(\d*\.?\d* (?:[eE][-+][0-9]+)?  ))?  #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
-}x;
-
-
-our $UngroupedSubcladeRegex; #Have to predeclare else variable wont be in scope (it calls itself)
-$UngroupedSubcladeRegex= qr{
+	##Construct regexes that parse the newick format - these took a day to make!! I could move these outside of this sub, but speed really isn't an issue.
+	our $CladeREGEX;
+	#Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$     or      (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
+	
+	$CladeREGEX = qr{ 
 	(?:
-		(
-			   \w+ (?: :\d*\.?\d* (?:[eE][-+][0-9]+)?  )?
-		|
-			  \( (??{$CladeREGEX}) \) \w* (?: :\d*\.?\d* (?:[eE][-+][0-9]+)?  )?
+			(
+			      (?: \w+ (?: :\d*\.?\d*(?:[eE][-+][0-9]+)?)?   )
+			  #Match simple clades of one item like: A:0.1 -  B:0.2
+			| 
+			     (:? \( (??{$CladeREGEX}) \) \w* (?: :\d*\.?\d*(?:[eE][-+][0-9]+)?)?   ) 
+			 #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
+			)
+				(?:  , (??{$CladeREGEX})  )?
 		)
-		,?
-	)
- }x;
+	}x;
+		
+	
+	our $SubcladeRegex;
+	#Have to predeclare else variable wont be in scope (it calls itself)
+	$SubcladeRegex= qr{ #Example string: ^(C:0.3,D:0.4):0.5$
+			\( ((??{$CladeREGEX})) \) (\w*) (?: :(\d*\.?\d* (?:[eE][-+][0-9]+)?  ))?  #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
+	}x;
+	
+	
+	our $UngroupedSubcladeRegex; #Have to predeclare else variable wont be in scope (it calls itself)
+	$UngroupedSubcladeRegex= qr{
+		(?:
+			(
+				   \w+ (?: :\d*\.?\d* (?:[eE][-+][0-9]+)?  )?
+			|
+				  \( (??{$CladeREGEX}) \) \w* (?: :\d*\.?\d* (?:[eE][-+][0-9]+)?  )?
+			)
+			,?
+		)
+	 }x;
 
 if($NewickString =~ m/;$/){ #Deal with full newick strings - so close to at the root (even if we are dealign with an unrooted tree!)
 
