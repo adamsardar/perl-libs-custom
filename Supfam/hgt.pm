@@ -28,8 +28,6 @@ Supfam::Config.pm
 
 our @ISA       = qw(Exporter AutoLoader);
 our @EXPORT    = qw(
-				Clade 
-				Deleted
 				RandomModel
 				RandomModelJulian
 				DeletedJulian
@@ -47,115 +45,14 @@ use Bio::TreeIO;
 
 use Bio::Tree::TreeFunctionsI;
 use Time::HiRes;
-use POSIX qw(floor);
-use Math::Random;
-use Math::Random qw(random_poisson);
+use POSIX qw(floor ceil);
 
-use Supfam::TreeFuncs;
+use Math::Random qw(random_poisson random_uniform random_uniform_integer);
+
+use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
 
-sub Clade($$) {
-	
-	my ($tree,$CladeGenomes) = @_;
-	
-	my $flag = 1;
-	#This routine includes an iterative process to find the common ancestor of all genomes in @$CladeGenomes. This is the flag
-	
-	my $AncestorNodeID = $CladeGenomes->[0]; # An initial value 
-	
-	
-		while($flag){
-			
-		my $node = $tree->find_node(-id => "$AncestorNodeID");
-		my @Descendents = $node->get_all_Descendents;
-		
-		IntUnDiff($CladeGenomes,\@Descendents);		
-		my $Outgroup = $_[2];
-		#This is a pointer to an array of elements unique to the first input list to IntUnDiff (so @$CladeGenomes).
-		
-			if(scalar(@$Outgroup)){
-				
-			$AncestorNodeID = $node->ancestor;
-				
-			}else{
-				$flag =0;
-			}
-		}
-
-return($AncestorNodeID);
-
-}
-
-
-=pod
-=item * Clade($$)
-Given a tree and a list of genomes, this function will find the most recent common ancestor of those genomes in the tree given. Clade($tree,$PointerToGenomesArray)
-=cut
-
-sub Deleted{ #Left out the prototyping arguments as its a recursive function. Be careful
-	
-	my ($tree,$node,$dels,$time,$GenomesOfDomArch) = @_;
-	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
-	
-	my $root = $tree->get_root_node;
-	
-	my @Descendents = map{$_->id} grep{ $_->is_Leaf==1 } $node->get_all_Descendents ;# All descendent leave ids. Sorry about it looking ugly, but this was the easiest way, honest!
-	@Descendents = ($node->id) if(($node->is_Leaf)); # This allows for when the node is a leaf and hence has no descendents
-	
-	my $UnionHash={};
-	my $Intersection =[];
-
-	foreach my $element (@Descendents, @$GenomesOfDomArch) { 
-		if($UnionHash->{$element}++ == 2){
-			push(@$Intersection,$element);
-		} 
-	}# Note that this method requires that the two lists of genomes be unique (no internal repeats in the lists)!
-
-	if(scalar(@$Intersection)){ # if there is any overlap between the list of genomes containing dom arch and those in the clade being studied
-	
-		my $EvolutionaryTime = 0; # Evolutionary time from ancestor
-		$EvolutionaryTime = $node->branch_length unless($node eq $root);
-		
-		$time += $EvolutionaryTime;
-	
-		unless ($node->is_Leaf){
-			
-			my @Children = $node->each_Descendent; # All the immediate children of the node
-			
-				foreach my $Child (@Children){
-			
-					($dels,$time) = Deleted($tree,$Child,$dels,$time,$GenomesOfDomArch);
-					#Notice the replacement of $node with $Child.
-				}
-				
-			return($dels,$time);
-				
-		}else{
-			
-			#We haven't seen a deletion. Don't increase $dels and return
-			return($dels,$time);	
-		}
-		
-	}else{
-		
-		my $EvolutionaryTime = $node->branch_length; # Evolutionary time from ancestor
-		
-		$time += $EvolutionaryTime/2; #Assume that the deletion took place at some point between last ancestor and now.
-		$dels++;
-		#We've seen a deletion. Increase $dels, update $time and return
-		
-		return($dels,$time);
-	}
-}
-
-
-=pod
-=item * Deleted
-This function looks at deletions of a particular domain archtecture of interest. Given a tree and a list of genomes that posses that domain architecture, this function
-moves through the tree, level by level, clade by clade. If a clade contains an example of the domain arch, add the evolutionary time distance of the clade root from its parent
-and look at the clades of its children nodes. If no examples of the dom arch are found, increase the number of deletions by one and move on. 
-Deleted($BioPerltreeobject,$CladeParentNode,$dels,$time,$GenomesPossessingDomainArchitecture)
-=cut
+use Data::Dumper;
 
 sub DeletedJulian($$$$$$$){ 
 	#($subtree,0,0,$NodesObserved)
@@ -163,36 +60,26 @@ sub DeletedJulian($$$$$$$){
 	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
 		
     my @InternalNodes = @{$TreeCacheHash->{$MRCA}{'each_Descendent'}};
-    @InternalNodes = $MRCA if($TreeCacheHash->{$MRCA}{'is_Leaf'});
+    @InternalNodes = ($MRCA) if($TreeCacheHash->{$MRCA}{'is_Leaf'});
     #InternalNodes will be a list of all nodes within the tree, grown in the loop below. Some initial values are thrown in here.
-           
-	    while(scalar(@InternalNodes)){
+    my @GenomesWithTraits = keys(%{$HashOfGenomesObserved});
+      
+    #  print Dumper($HashOfGenomesObserved);
+      
+       map{if($HashOfGenomesObserved->{$DomArch}{$_} > 1){print $DomArch."\n"; print $_."\n"; die '$HashOfGenomesObserved should have UNIQUE key value pairs. '.$_.' is non unique. There is a serious issue with the way that data is inputed into the hash'."\n";}}(keys(%{$HashOfGenomesObserved->{$DomArch}}));
+       # Error check. Note that this sub requires that the two lists of genomes be unique (no internal repeats in the lists)!
+		
+	   while(scalar(@InternalNodes)){
 	    	
 	    	my $node = pop(@InternalNodes);
 	    	
 	    	my $DistanceFromAncestor = $TreeCacheHash->{$node}{'branch_length'};
  	
-	    	my @Descendents = map{$_->id} @{$TreeCacheHash->{$node}{'Clade_Leaves'}}  ;# All descendent leaf ids
-			@Descendents = ($node->id) if($TreeCacheHash->{$node}{'is_Leaf'}); # This allows for when the node is a leaf and hence has no descendents
-	  	   
-			my $Intersection =[];
-			no warnings 'uninitialized';
-			
-			foreach my $descendent (@Descendents) { 
-				
-				if($HashOfGenomesObserved->{$descendent} == 1){
+	    	my @NodeDescendents = map{$TreeCacheHash->{$_}{'node_id'}}@{$TreeCacheHash->{$node}{'Clade_Leaves'}}  ;# All descendent leaf ids
+			@NodeDescendents = ($TreeCacheHash->{$node}{'node_id'}) if($TreeCacheHash->{$node}{'is_Leaf'}); # This allows for when the node is a leaf and hence has no descendents
+	  	     	   	  	   
+			my (undef,$Intersection,undef,undef) = IntUnDiff(\@NodeDescendents,\@GenomesWithTraits);		
 					
-					push(@$Intersection,$descendent);
-				}elsif($HashOfGenomesObserved->{$descendent} > 1){
-					
-					print $DomArch."\n";
-					print $descendent;
-					die '$HashOfGenomesObserved should have UNIQUE key value pairs. '.$descendent.' is non unique. There is a serious issue with the way that data is inputed into the hash'."\n";
-				}
-				
-				
-			}# Note that this method requires that the two lists of genomes be unique (no internal repeats in the lists)!
-	   	   	
 			if(scalar(@$Intersection)){ # if there is any overlap between the list of genomes containing dom arch and those in the clade being studied
 		
 	    		$time += $DistanceFromAncestor;
@@ -201,14 +88,15 @@ sub DeletedJulian($$$$$$$){
 	    			
 					my @NodeChildren = @{$TreeCacheHash->{$node}{'each_Descendent'}};
 	    			push(@InternalNodes,@NodeChildren);
-	    			}
+	    		}
+	 
 	    	}else{
 	    		
 	    		$time += $DistanceFromAncestor/2;
 	    		$dels++;
 	    	}
 	    }
-	    
+	   
 		return($dels,$time);
 }
 
@@ -268,8 +156,9 @@ sub RandomModelPoisson($$$$$) {
 		#Update the distribution of the run accordingly and store results in rawresults
 	}
 	
-	my $SelftestValue = $RawResults->[scalar(rand(@$RawResults))]; # A single uniform random simulation value
-		
+	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	
 	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
 }
 
@@ -351,8 +240,8 @@ sub RandomModelCorrPoisson($$$$$) {
 		#Update the distribution of the run accordingly and store results in rawresults
 	}
 	
-	my $SelftestValue = $RawResults->[scalar(rand(@$RawResults))]; # A single uniform random simulation value
-		
+	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
 	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
 }
 
@@ -375,14 +264,6 @@ sub RandomModel {
 	$LHHash->{$MRCA}=1;
 	
 	my $TreeLikelihood = 1;
-	
-	#print STDERR "Observed genome likelihoods:\n";
-	
-#	my $Observed = join("\n",@$ObservedGenomes);
-#	open OBS, ">ObservedID.dat";
-#	print OBS $Observed;
-#	close OBS;
-#	
 
 	my @UnobservedIDs;
 
@@ -405,9 +286,7 @@ sub RandomModel {
 
 		my $UnobservedGenomeLH = NegativeDomArchObservations($LHHash,$UnobservedGenome,$TreeCacheHash,$DeletionRate); #Populate $LHHash with LH values
 		$TreeLikelihood = $TreeLikelihood*(1-$UnobservedGenomeLH); #The value is 1-prob as we are dealing with the probability of NOT observing dom arch
-		
-		#my $NodeName = $UnobservedGenome->id;
-		#print STDERR $NodeName.' : '.$UnobservedGenomeLH."\n";
+
 	}
 	
 	return($TreeLikelihood);
@@ -467,9 +346,13 @@ sub RandomModelJulian($$$$$) {
 		push(@$RawResults,$no_model_genomes);
 		#Update the distribution of the run accordingly and store results in rawresults
 	}
+
+#	print Dumper($RawResults);
+#	print "\n";
 	
-	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
-		
+	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	
 	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
 	
 }
@@ -520,7 +403,8 @@ sub RandomModelJulianOpt($$$$$) {
 		#Update the distribution of the run accordingly and store results in rawresults
 	}
 	
-	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
+	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
 
 	return($SelftestValue,$distribution,$RawResults);
 }
@@ -532,75 +416,91 @@ A deletion model based on the poisson distribution of deletion events. Using the
 we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
 =cut
 
-sub calculatePosteriorQuantile($%$){
-	#Removed the prototyping - be careful
+sub calculatePosteriorQuantile($$$$){
+
+	my ($SingleValue,$DistributionHash,$NumberOfSimulations,$CladeSize) = @_;
+		
+	$DistributionHash->{$SingleValue}++;
+	my $NumberOfSimulationsLT;
 	
-#	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
-#		
-#	$DistributionHash->{$SingleValue}++;
-#	$NumberOfSimulations++;
-#	
-#	my $PosteriorQuantile;
-#	
-#	my @SortedDistributionIndicies = sort(keys(%$DistributionHash));
-#	
-#	while(my $Distribution_index = pop(@SortedDistributionIndicies)){
-#		
-#		last unless ($SingleValue > $Distribution_index);
-#		
-#		$PosteriorQuantile += $DistributionHash->{$Distribution_index} ;
-#	}
-#	
-#	$PosteriorQuantile += floor(rand($DistributionHash->{$SingleValue}));
-#	
-#	$PosteriorQuantile = $PosteriorQuantile/$NumberOfSimulations;
-#	
-#	return($PosteriorQuantile);
+	my @DistributionIndicies = keys(%$DistributionHash);
+
+	
+#
+#	print Dumper($DistributionHash);
+#	print "\n";
+#	print $SingleValue;
+#	print "  Val\n";
+
+	foreach my $Number_of_genomes  (0 .. $CladeSize){
+		
+		if($SingleValue > $Number_of_genomes){
+		
+			$NumberOfSimulationsLT += $DistributionHash->{$Number_of_genomes} if (exists($DistributionHash->{$Number_of_genomes}));
+		}
+   }
+	
+	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of 
+	$NumberOfSimulationsLT += random_uniform(1,0,$Degeneracy);
+	
+	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
+
+	#my $PosteriorQuantile = random_uniform();
+	#$PosteriorQuantile += 0;
+	
+	$DistributionHash->{$SingleValue}--;
+	#Undo the modification to the distribution
+	
+	return($PosteriorQuantile);
 
 
-my ($SingleValue,%DistributionHash,$NumberOfSimulations,$CladeSize) = @_;
-
-my $ii=0;
-my $jj;
-my %Results;
-
-for $i (0 .. $CladeSize){
-if ($i == $SingleValue){
-  if (exists($distribution{$i})){
-$jj=$ii+1;
-for (1 .. $distribution{$i}){
-  if (exists($results{$jj})){
-$results{$jj}=$results{$jj}+1/$distribution{$i};$average=$average+$jj/$distribution{$i};
-}
-else{
-$results{$jj}=1/$distribution{$i};$average=$average+$jj/$distribution{$i};
-}
-$jj++;
-}
-}
-else{
-  if (exists($results{$ii})){
-$results{$ii}=$results{$ii}+0.5;
-}
-else{
-$results{$ii}=0.5;
-}
-  if (exists($results{($ii+1)})){
-$results{($ii+1)}=$results{($ii+1)}+0.5;
-}
-else{
-$results{($ii+1)}=0.5;
-}
-$average=$average+$ii;
-}
-last;
-}
-  if (exists($distribution{$i})){
-$ii=$ii+$distribution{$i};
-}
-}
-
-return($ii);
+#my ($SingleValue,$hash,$NumberOfSimulations,$CladeSize) = @_;
+#
+#my %distribution = %$hash;
+#
+#my $ii=0;
+#my $jj;
+#my %results;
+#
+#my $average =0;
+#
+#for my $i (0 .. $CladeSize){
+#if ($i == $SingleValue){
+#  if (exists($distribution{$i})){
+#$jj=$ii+1;
+#for (1 .. $distribution{$i}){
+#  if (exists($results{$jj})){
+#$results{$jj}=$results{$jj}+1/$distribution{$i};$average=$average+$jj/$distribution{$i};
+#}
+#else{
+#$results{$jj}=1/$distribution{$i};$average=$average+$jj/$distribution{$i};
+#}
+#$jj++;
+#}
+#}
+#else{
+#  if (exists($results{$ii})){
+#$results{$ii}=$results{$ii}+0.5;
+#}
+#else{
+#$results{$ii}=0.5;
+#}
+#  if (exists($results{($ii+1)})){
+#$results{($ii+1)}=$results{($ii+1)}+0.5;
+#}
+#else{
+#$results{($ii+1)}=0.5;
+#}
+#$average=$average+$ii;
+#}
+#last;
+#}
+#  if (exists($distribution{$i})){
+#$ii=$ii+$distribution{$i};
+#}
+#}
+#
+#return($ii);
 
 
 }
@@ -677,7 +577,7 @@ sub NegativeDomArchObservations{
 =pod * NegativeDomArchObservations
 This is a sub to calculate the likelihood of a node containing the domain architecture in question, given previous observations (stored in $LHHash). Note the difference between these two functions:
 One assumes that the inputed node has had the domain architecture observed in its genomes. Using strict dollo parsimony therefore, all later references to whther an ancestor contains that dom arch will
-be one, as it is the only possible way to explain the previously observed sighiting of the do arch.
+be one, as it is the only possible way to explain the previously observed sighiting of the domain architecture.
 =cut
 
 1;
