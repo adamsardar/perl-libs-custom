@@ -156,8 +156,10 @@ sub RandomModelPoisson($$$$$) {
 		#Update the distribution of the run accordingly and store results in rawresults
 	}
 	
-	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
-	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
+	
+	#my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	#my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
 	
 	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
 }
