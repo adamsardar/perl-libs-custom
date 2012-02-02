@@ -68,6 +68,7 @@ use DBI;
 use Supfam::Config;
 use Supfam::Utils;
 use Supfam::SQLFunc;
+use Time::HiRes;
 
 =pod
 =head2 Methods
@@ -230,15 +231,14 @@ sub BuildTreeCacheHash($){
 	
 	
 	#Read in and initialise tree
-	
 	my $root = Newick2Node($NewickTreeString,$TreeHash);
 	#Recursive function that populates tree entries into $TreeCacheHash
-	
+		
 	my $BranchLengthsFlag = 1; #Flag to test if the input file contained branch length info (will no compute cladetime hash if not)
 	
 	foreach my $node (keys(%$TreeHash)){
 		
-		if ($TreeHash->{$node}{'branch_length'} ~~ undef){$BranchLengthsFlag =0; }
+		$BranchLengthsFlag = 0 if ($TreeHash->{$node}{'branch_length'} ~~ undef);
 		my @CladeLeavesList;
 		
 		$TreeHash->{$node}{'Clade_Leaves'} = \@CladeLeavesList;
@@ -246,26 +246,27 @@ sub BuildTreeCacheHash($){
 		@CladeLeavesList = grep{$TreeHash->{$_}{'is_Leaf'} == 1}(@{$TreeHash->{$node}{'all_Descendents'}});	
 	}
 	
-	# Add $TreeHash->{$node}{'Clade_Leaves'}
-	
-#	EasyDump("./Treedraft",$TreeHash);
-	
 	if($BranchLengthsFlag){
 							
-		foreach my $interanl_node (@{$TreeHash->{$root}{'all_Descendents'}},$root){
+		foreach my $internal_node (@{$TreeHash->{$root}{'all_Descendents'}},$root){
 			
-			$TreeHash->{$interanl_node}{'branch_length'} = 0 if ($interanl_node eq $root);
-			print STDERR "Node id:".$TreeHash->{$interanl_node}{'node_id'}." - branch length of zero found, introducing a pseudocount of 0.000001\n"  if ($TreeHash->{$interanl_node}{'branch_length'} ~~ 0 && $interanl_node ne $root);				
-			$TreeHash->{$interanl_node}{'branch_length'} = 0.00000001 if($TreeHash->{$interanl_node}{'branch_length'} ~~ 0 && $interanl_node ne $root); 	
+			$TreeHash->{$internal_node}{'branch_length'} = 0 if($internal_node eq $root);
+			
+			if ($TreeHash->{$internal_node}{'branch_length'} ~~ 0 && $internal_node ne $root){
+				my $NodeID = $TreeHash->{$internal_node}{'node_id'};
+				print STDERR "Node id:".$NodeID." - branch length of zero found, introducing a pseudocount of 0.000001\n";
+				$TreeHash->{$internal_node}{'branch_length'} = 0.00000001;
+			}			
 		}
 				
-		map{GenerateCladeTimeHash($_,$TreeHash)}(@{$TreeHash->{$root}{'all_Descendents'}},$root);
+		#map{GenerateCladeTimeHash($_,$TreeHash)}(@{$TreeHash->{$root}{'all_Descendents'}},$root);
 	
 	}else{
 		
 		$TreeHash->{$root}{'branch_length'} = undef if($TreeHash->{$root}{'branch_length'}); #This is a hideous way to deal with the fact that it is possible for the root to have a branch length when no other node does.
 		print STDERR "Branch lengths not specieifed in input tree\n";
 	}
+	
 	#This adds two other key/value pairs:
 	# 	$TreeHash->{$node}{'Total_branch_lengths'}  - the total branch length of the clade beneath this node
 	# 	$TreeHash->{$MRCA}{'Probability_Hash'}={ clade point => nodeID} - clade point is the point in the clade beneath the MRCA node which this node sits
@@ -313,13 +314,18 @@ sub Newick2Node{
 	
 	$Ancestor = 'ROOT' if (@_ < 3); #If $Ancestor isn't set, we shall assume that it's the root of the tree
 
-	
 	##Construct regexes that parse the newick format - these took a day to make!! I could move these outside of this sub, but speed really isn't an issue.
-	our $CladeREGEX;
-	#Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$     or      (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
+	
+	my $CladeREGEX;
+	my $SubcladeRegex;
+	my $UngroupedSubcladeRegex;
+	
+{no warnings; #stops a warning due to the variables being reevaled in a regex recursively
+		
+	#	#Example string: ^A:0.1,B:0.2,(C:0.3,D:0.4):0.5$ or (zf:0.038180391033334815,(ML:0.03567456015116893,gg:0.02024961624308485):0.008713385399205688):0.33501485928240105
 	
 	$CladeREGEX = qr{ 
-	(?:
+	  (?:
 			(
 			      (?: \w+ (?: :\d*\.?\d*(?:[eE][-+][0-9]+)?)?   )
 			  #Match simple clades of one item like: A:0.1 -  B:0.2
@@ -332,14 +338,14 @@ sub Newick2Node{
 	}x;
 		
 	
-	our $SubcladeRegex;
+	
 	#Have to predeclare else variable wont be in scope (it calls itself)
 	$SubcladeRegex= qr{ #Example string: ^(C:0.3,D:0.4):0.5$
 			\( ((??{$CladeREGEX})) \) (\w*) (?: :(\d*\.?\d* (?:[eE][-+][0-9]+)?  ))?  #Initialise $CladeREGEX again so as to parse more complex clades, e.g (C:0.3,D:0.4):0.5
 	}x;
 	
 	
-	our $UngroupedSubcladeRegex; #Have to predeclare else variable wont be in scope (it calls itself)
+	 #Have to predeclare else variable wont be in scope (it calls itself)
 	$UngroupedSubcladeRegex= qr{
 		(?:
 			(
@@ -350,6 +356,7 @@ sub Newick2Node{
 			,?
 		)
 	 }x;
+}
 
 if($NewickString =~ m/;$/){ #Deal with full newick strings - so close to at the root (even if we are dealign with an unrooted tree!)
 
@@ -690,8 +697,7 @@ You can specify how you want the tree using $branchesflag (1 - include branch le
 sub Splice_Node($$$){
 	
 	my ($TreeHash,$Node2Splice,$root) = @_;
-	
-	
+		
 	my $Ancestor = $TreeHash->{$Node2Splice}{'ancestor'};
 	my @Descendants = @{$TreeHash->{$Node2Splice}{'each_Descendent'}};
 	
@@ -998,9 +1004,9 @@ which should be an array ref.
 =cut
 
 
-sub TreeIntersection{
+sub TreeIntersection($$$$){
 	
-	my ($treeAstring,$treeBstring,$verboseintersection) = @_;
+	my ($treeAstring,$treeBstring,$verboseintersection,$TreeAOnly) = @_;
 	 #Using IO::String to create io hadles for the newick strings. Do this externally to this function using my $io = IO::String->new($string);
 	#$verboseintersection is a flag for printing out a whole load of info regarding the trees and which nodes intersect.
 	
@@ -1009,40 +1015,54 @@ sub TreeIntersection{
 	my ($Aroot,$TreeAObject) = BuildTreeCacheHash($treeAstring);
 	my ($Broot,$TreeBObject) = BuildTreeCacheHash($treeBstring);
 	
-	my @Ataxa = map{$TreeAObject->{$_}{'node_id'}}@{$TreeAObject->{$Aroot}{'Clade_Leaves'}};
-	my @Btaxa = map{$TreeBObject->{$_}{'node_id'}}@{$TreeBObject->{$Broot}{'Clade_Leaves'}};
+		#Dictionary of node_name to node key
+	my $TreeADictionary = {};
+	my $TreeBDictionary = {};
+	
+	
+	
+	map{$TreeADictionary->{$TreeAObject->{$_}{'node_id'}} = $_;}@{$TreeAObject->{$Aroot}{'Clade_Leaves'}};
+	map{$TreeBDictionary->{$TreeBObject->{$_}{'node_id'}} = $_;}@{$TreeBObject->{$Broot}{'Clade_Leaves'}};
+	
+	my @Ataxa = keys(%$TreeADictionary);
+	my @Btaxa = keys(%$TreeBDictionary);
 	
 	if($verboseintersection){
 	
-		print STDERR "Tree A leaves: [".scalar(@Ataxa)."] \n";
-		print STDERR join(',',sort(@Ataxa));
-		print STDERR "\n";
+		print  "Tree A leaves: [".scalar(@Ataxa)."] \n";
+		print  join(',',sort(@Ataxa));
+		print  "\n";
 		
-		print STDERR "Tree B leaves: [".scalar(@Btaxa)."] \n";
-		print STDERR join(',',sort(@Btaxa));
-		print STDERR "\n";
+		print  "Tree B leaves: [".scalar(@Btaxa)."] \n";
+		print  join(',',sort(@Btaxa));
+		print  "\n";
 	}
 	
 	my ($Union,$Intersection,$ListAExclusive,$ListBExclusive) = IntUnDiff(\@Ataxa,\@Btaxa);
 	
 	die "No taxa in commonbetween the two trees!\n" if (scalar(@$Intersection) == 0);
-	
+
 	#A Remove
 	foreach my $ANodeToRemove (@$ListAExclusive){
-		
-		Splice_Node($TreeAObject,$ANodeToRemove,$Aroot);
+
+		my $NodeID2Splice = $TreeADictionary->{$ANodeToRemove};
+		Splice_Node($TreeAObject,$NodeID2Splice,$Aroot);
 	}
-		
+	
+	sanitise_TreeHash($TreeAObject,$Aroot,$verboseintersection);
+
+unless($TreeAOnly){
 	#Bremove
 	foreach my $BNodeToRemove (@$ListBExclusive){
 		
-		Splice_Node($TreeBObject,$BNodeToRemove,$Broot);
+		my $NodeID2Splice = $TreeBDictionary->{$BNodeToRemove};
+		Splice_Node($TreeAObject,$NodeID2Splice,$Aroot);
 	}
 	
-	#Sanitise trees
-	sanitise_TreeHash($TreeAObject,$Aroot,$verboseintersection);
 	sanitise_TreeHash($TreeBObject,$Broot,$verboseintersection);
-	
+}
+	#Sanitise trees
+		
 	# Output tree descriptions
 	
 	if($verboseintersection){ #Some useful info regaridng leaves of different trees
