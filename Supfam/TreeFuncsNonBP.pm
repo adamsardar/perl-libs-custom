@@ -259,7 +259,7 @@ sub BuildTreeCacheHash($){
 			}			
 		}
 				
-		#map{GenerateCladeTimeHash($_,$TreeHash)}(@{$TreeHash->{$root}{'all_Descendents'}},$root);
+		map{GenerateCladeTimeHash($_,$TreeHash)}(@{$TreeHash->{$root}{'all_Descendents'}},$root);
 	
 	}else{
 		
