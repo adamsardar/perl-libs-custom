@@ -423,20 +423,24 @@ sub calculatePosteriorQuantile($$$$){
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations,$CladeSize) = @_;
 		
 	$DistributionHash->{$SingleValue}++;
-	my $NumberOfSimulationsLT;
+	my $NumberOfSimulationsLT = 0;
 	
 	my @DistributionIndicies = keys(%$DistributionHash);
 
 	foreach my $Number_of_genomes  (0 .. $CladeSize){
 		
-		if($SingleValue > $Number_of_genomes){
+		last if($Number_of_genomes == $SingleValue);
 		
-			$NumberOfSimulationsLT += $DistributionHash->{$Number_of_genomes} if (exists($DistributionHash->{$Number_of_genomes}));
+		if (exists($DistributionHash->{$Number_of_genomes})){
+			
+			$NumberOfSimulationsLT += $DistributionHash->{$Number_of_genomes};
 		}
    }
 	
 	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
-	$NumberOfSimulationsLT += random_uniform(1,0,$Degeneracy);
+	my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
+	$NumberOfSimulationsLT += $DegeneracyContribution;
+	#$NumberOfSimulationsLT += $Degeneracy/2;
 	
 	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
 	
@@ -444,56 +448,6 @@ sub calculatePosteriorQuantile($$$$){
 	#Undo the modification to the distribution
 	
 	return($PosteriorQuantile);
-
-#my ($SingleValue,$hash,$NumberOfSimulations,$CladeSize) = @_;
-#
-#my %distribution = %$hash;
-#
-#my $ii=0;
-#my $jj;
-#my %results;
-#
-#my $average =0;
-#
-#for my $i (0 .. $CladeSize){
-#if ($i == $SingleValue){
-#  if (exists($distribution{$i})){
-#$jj=$ii+1;
-#for (1 .. $distribution{$i}){
-#  if (exists($results{$jj})){
-#$results{$jj}=$results{$jj}+1/$distribution{$i};$average=$average+$jj/$distribution{$i};
-#}
-#else{
-#$results{$jj}=1/$distribution{$i};$average=$average+$jj/$distribution{$i};
-#}
-#$jj++;
-#}
-#}
-#else{
-#  if (exists($results{$ii})){
-#$results{$ii}=$results{$ii}+0.5;
-#}
-#else{
-#$results{$ii}=0.5;
-#}
-#  if (exists($results{($ii+1)})){
-#$results{($ii+1)}=$results{($ii+1)}+0.5;
-#}
-#else{
-#$results{($ii+1)}=0.5;
-#}
-#$average=$average+$ii;
-#}
-#last;
-#}
-#  if (exists($distribution{$i})){
-#$ii=$ii+$distribution{$i};
-#}
-#}
-#
-#return($ii);
-
-
 }
 
 
