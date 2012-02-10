@@ -84,17 +84,6 @@ sub IntUnDiff($$){
 	
 	my ($ListA,$ListB) = @_;
 	
-	my $switch = 0;
-	#A flag for if the two lists are flipped around in the next step. This allows for correct reporting of the return values
-	
-	if (scalar(@$ListA) > scalar(@$ListB)){
-		my $TempList = $ListA;
-		$ListA = $ListB;
-		$ListB = $TempList;
-		$switch=1;
-	}
-	# This is to make sure that the code runs efficiently, which requires ListA to be the smaller of the two lists.
-	
 	my $UnionHash = {};
 	my $Union = [];
 	my $Intersection = [];
@@ -102,40 +91,46 @@ sub IntUnDiff($$){
 	my $ListBExclusive = [];
 	
 	my $ListALookup={};
+	my $ListBLookup={};
 	
-	foreach(@$ListA){$ListALookup->{$_} = 1;}
+	map{$ListALookup->{$_} = 1}@$ListA;
+	map{$ListBLookup->{$_} = 1}@$ListB;
 	#Initialise a hash for lookup later
 	
-	foreach my $element (@$ListA, @$ListB) { $UnionHash->{$element}++; } 
+	foreach my $element (keys(%$ListALookup), keys(%$ListBLookup)) { $UnionHash->{$element}++; }
+	#USe the keys of the above hash to get the unique elements in that set
 	
 	@$Union = keys(%$UnionHash);
 	
-	 foreach my $element (@$Union) {     
+	 foreach my $element (@$Union) {
 	 	   
 	 	 if ($UnionHash->{$element} == 2) {  #i.e if it's in both sets      
-	 	 	 push (@$Intersection, $element);     
-	 	 } else {     
-	 	 	no warnings 'uninitialized';
-	 	 	#This is to stop Perl moaning about elements not beining initialised in the lookup hash below
+	 	 	 push (@$Intersection, $element);
+	 	 } else {
 	 	 
-	 	 	if ($ListALookup->{$element}){
+	 	 	if (exists($ListALookup->{$element})){
 	 	 		push(@$ListAExclusive, $element);   
-	 	 	}else {
+	 	 	}elsif(exists($ListBLookup->{$element})){
 	 	 		push(@$ListBExclusive, $element); 
+	 	 	}else{
+	 	 		die "Error in code!\n";
 	 	 	}
-	 	 } 
+	 	 }
 	 }
 	
-	unless ($switch) {return($Union,$Intersection,$ListAExclusive,$ListBExclusive);
-	}else {			return($Union,$Intersection,$ListBExclusive,$ListAExclusive);
-	};
+	return($Union,$Intersection,$ListAExclusive,$ListBExclusive);
+
 }
 
 =pod
 =item * IntUnDiff($$)
 A quick function to calculate some basic set statistics between two lists (supplied as pointers to two arrays in). Returns four
-pointers to arrays of the 1. Union 2. Intersection 3. Elements unique to list A 4. Elements uniqur to list B.
+pointers to arrays of the 1. Union 2. Intersection 3. Elements unique to list A 4. Elements unique to list B.
+
+NOTE - repeats in input list are ignored! So the output lists are unique! so if list A = (A,A,B,C) and list B = (A,D,E,F), union = (A,B,C,D,E,F) and intersection (A) etc. 
+
 =cut
+
 
 sub TabSepFile{
 	
