@@ -193,12 +193,17 @@ sub RandomModelCorrPoisson($$$$$) {
 	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
 	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
 	
+	my @UniformDeletions;
+	
 	while  (@PoissonianDeletions){ #For $Iterations number of times
 	
 		my $DeletionSimultation = shift(@PoissonianDeletions); #remove the first entry in array and set it as the number of deletions in this simulation
 		
-		my @UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
+		@UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
+		#Mallocing constantly
+		
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
+		
 		$DeletionsNumberDistribution->{$DeletionSimultation}++;
 		
 		foreach my $DeletionPoint (@UniformDeletions) {
