@@ -51,7 +51,7 @@ use POSIX qw(floor ceil);
 use Math::Random qw(random_poisson random_uniform random_uniform_integer);
 use Set::IntervalTree; #Used in optimised code for mapping deletion events onto the phylogenetic tree
 
-use lib "/home/sardar/bin/perl-libs-custom";
+use lib "$ENV{HOME}/bin/perl-libs-custom";
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
 
@@ -207,7 +207,7 @@ sub RandomModelCorrPoisson($$$$$) {
 		
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
 		
-		$DeletionsNumberDistribution->{$DeletionSimultation}++;
+		#$DeletionsNumberDistribution->{$DeletionSimultation}++;
 		
 		foreach my $DeletionPoint (@UniformDeletions) {
                     
@@ -272,27 +272,13 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
 	
 	#$root is the root of the subtree or the most recent common ancestor
 
-    my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
-    push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
-       
-    my @Weights = map{$TreeCacheHash->{$_}{'branch_length'}}@CladeGenomes; 
-      
-    #Construct an interval tree for fast mapping of deletion events to the tree
-    #Construct an interval tree (O(nlog(n)) time) so as to computepositions in clade most efficiently 
+    my $CladeGenomes = $TreeCacheHash->{$root}{'Clade_Leaves'};
+    push(@$CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
     
-    my $IntervalTree = Set::IntervalTree->new; 
-   
-    my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
-    my $IntervalStartPoint = 0;
-        
-    foreach my $IntervalEndPoint (sort(keys(%$ProbabilityHash))) {
-    	
-    	my $Node = $ProbabilityHash->{$IntervalEndPoint};
-    	        	
-    	$IntervalTree->insert($Node, $IntervalStartPoint, $IntervalEndPoint);
-    	$IntervalStartPoint=$IntervalEndPoint;
-    }
-
+    my $AllNodes = $TreeCacheHash->{$root}{'all_Descendents'};
+    my $Weights = [map{$TreeCacheHash->{$_}{'branch_length'}}@$AllNodes]; 
+    # @CladeGenomes and @Weights will be used in selecting points at which deletions have occured, using choose_weighted
+ 
 	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
 	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
 	
@@ -308,25 +294,16 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
 	
 		my $DeletionSimultation = shift(@PoissonianDeletions); #remove the first entry in array and set it as the number of deletions in this simulation
 		
-		@UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
+		@UniformDeletions = map{choose_weighted($AllNodes,$Weights)}(1 .. $DeletionSimultation); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
 		
-		my @ModelCladeGenomes = @CladeGenomes;
+		my @ModelCladeGenomes = @$CladeGenomes;
 		my $TotalDeletedGenomes = [];
 		
 		#$DeletionsNumberDistribution->{$DeletionSimultation}++; #Turn on if you want to measure how often a value is sampled
 		
 		foreach my $DeletionPoint (@UniformDeletions) {
-                
-			my $DeletedBranchs = $IntervalTree->fetch($DeletionPoint,$DeletionPoint);#Find the node directly below the deletion
 			
-			print $$DeletedBranchs[0];
-			
-			print join("\n",@$DeletedBranchs);
-			print "\n";
-			
-			die "Overlapping regions in tree probability hash" unless(scalar(@$DeletedBranchs) == 1); #should only be one branch
-
-			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$$DeletedBranchs[0]}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
+			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$DeletionPoint}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
 			my (undef,undef,undef,$NewDeletedGenomes) = IntUnDiff($TotalDeletedGenomes,$CurrentSimDeletedGenomes);
 			
 			push(@$TotalDeletedGenomes,@$NewDeletedGenomes);
@@ -346,7 +323,7 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
 			(undef,undef,$ModelFullCladeExclusive,undef) = IntUnDiff($TreeCacheHash->{$ModelRoot}{'Clade_Leaves'},$ModelRemianingLeaves)	; #		$ModelFullCladeExclusive will contain the members of the simulated clade beneath the simulated MRCA that aren't in the model genomes. If this is of size zero, then we should discount this result as it might incorporate bias 	
 		}
 		
-		if ($no_model_genomes == 0  || $no_model_genomes == scalar(@CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
+		if ($no_model_genomes == 0  || $no_model_genomes == scalar(@$CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
 
 			push(@PoissonianDeletions,random_poisson(1,$Expected_deletions)); #push a number onto the end on the deletions array
 			next;

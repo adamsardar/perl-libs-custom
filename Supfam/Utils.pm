@@ -32,6 +32,7 @@ our @EXPORT    = qw(
 					EasyUnDump
 					IntUnDiff
 					TabSepFile
+					choose_weighted
 					CommaSepFile
                   );
 our @EXPORT_OK = qw();
@@ -40,10 +41,14 @@ our $VERSION   = 1.00;
 use strict;
 use warnings;
 
+use lib "$ENV{HOME}/bin/perl-libs-custom";
+
 use Data::Dumper;
 use Term::ProgressBar;
 use Math::Combinatorics;
 use Supfam::SQLFunc;
+use Carp qw(croak);
+use Params::Validate qw(:all);
 
 
 sub EasyDump($$){
@@ -248,6 +253,57 @@ An easy way to dump a whole load of Entry=>{field1 =>val1, field2 => val2 ...} d
 File save to $fileout
 
 =cut
+
+
+sub choose_weighted{
+     validate_pos(@_, 
+		  { type => ARRAYREF },
+		  { type => CODEREF | ARRAYREF}
+ 	);
+
+    my ($objects, $weightsArg ) = @_;
+    my $calcWeight = $weightsArg if 'CODE' eq ref $weightsArg;
+    my @weights;		# fix wasteful of memory
+    if( $calcWeight){
+	@weights =  map { $calcWeight->($_) } @$objects; 
+    }
+    else{
+	@weights =@$weightsArg;
+	if ( @$objects != @weights ){
+	    croak "given arefs of unequal lengths!";
+	}
+    }
+
+    my @ranges = ();		# actually upper bounds on ranges
+    my $left = 0;
+    for my $weight( @weights){
+	$weight = 0 if $weight < 0; # the world is hostile...
+	my $right = $left+$weight;
+	push @ranges, $right;
+	$left = $right;
+    }
+    my $weightIndex = rand $left;
+    for( my $i =0; $i< @$objects; $i++){
+	my $range = $ranges[$i];
+	return $objects->[$i] if $weightIndex < $range;
+    }
+}
+
+=pod
+=item * choose_weighted ($object_Aref, $weights_Aref )
+
+Just one function, a simple means of making a weighted random choice
+
+The implementation uses rand to calculate random numbers.
+
+	choose_weighted ($object_Aref, $weights_Aref )
+or 
+	choose_weighted ($object_Aref, $weights_codeRef )
+
+In the second case, the coderef is called on each object to determine its weight;
+
+=cut
+
 
 1;
 

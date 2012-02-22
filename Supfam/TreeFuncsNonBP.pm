@@ -64,7 +64,8 @@ our $VERSION   = 1.00;
 use strict;
 use warnings;
 
-use lib "/home/sardar/bin/perl-libs-custom";
+use lib "$ENV{HOME}/bin/perl-libs-custom";
+
 use DBI;
 use Supfam::Utils;
 use Supfam::SQLFunc;
