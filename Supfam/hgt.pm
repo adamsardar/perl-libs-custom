@@ -34,7 +34,6 @@ our @EXPORT    = qw(
 				DeletedPoisson
 				RandomModelPoisson
 				RandomModelCorrPoisson
-				RandomModelCorrPoissonOptimised
 				calculatePosteriorQuantile
                   );
 our @EXPORT_OK = qw();
