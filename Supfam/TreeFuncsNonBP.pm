@@ -64,8 +64,8 @@ our $VERSION   = 1.00;
 use strict;
 use warnings;
 
+use lib "/home/sardar/bin/perl-libs-custom";
 use DBI;
-use Supfam::Config;
 use Supfam::Utils;
 use Supfam::SQLFunc;
 use Time::HiRes;
@@ -1294,6 +1294,7 @@ sub isrootedbinary_TreeHash($$){
 Simply tests if a tree stored within a treehash is a rooted binary tree (all nodes have two descendents except for leaves)
 
 =cut
+
 
 1;
 
