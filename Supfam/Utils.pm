@@ -34,6 +34,8 @@ our @EXPORT    = qw(
 					TabSepFile
 					choose_weighted
 					CommaSepFile
+					KLdistance
+					fisher_yates_shuffle
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -49,7 +51,7 @@ use Math::Combinatorics;
 use Supfam::SQLFunc;
 use Carp qw(croak);
 use Params::Validate qw(:all);
-
+use List::Util qw(reduce);
 
 sub EasyDump($$){
 	my ($FileName,$Pointer) = @_;
@@ -303,6 +305,96 @@ or
 In the second case, the coderef is called on each object to determine its weight;
 
 =cut
+
+
+sub KLdistance($$){
+	
+	my ($distA,$distB) = @_;
+	
+	my $distAsum = reduce{$a + $b}values(%$distA);
+	my $distBsum = reduce{$a + $b}values(%$distB);
+	
+	unless($distAsum == 1 && $distBsum == 1){
+		
+		normalise_distribution($distA);
+		normalise_distribution($distB);
+	}
+	
+	EasyDump('./dumpA.out',$distA);
+	EasyDump('./dumpB.out',$distB);
+	
+	my $KLscore = 0;
+	
+	foreach my $dist_index (keys(%$distA)){
+		
+		next unless(exists($distB->{$dist_index}));
+		#Prevents 'divide by zero' errors. But you should really add a psudo count to your output ...
+	
+		my $KLcontribution = ($distA->{$dist_index})*log(($distA->{$dist_index})/($distB->{$dist_index}))/log(2);
+		$KLscore += $KLcontribution	
+	}
+
+	return($KLscore);
+
+}
+
+=pod
+=item * KLdistance ($distA, $distB)
+
+A crude implementation of the KL distance between distribution A and distribution B
+
+Compares probability distribution A to distribution B (sum Pa*lb(Pa/Pb))
+
+Distributions are stored as $hash->{value}=weight (discritise continuous distributions)
+
+A check is performed to ensure that the weights all sum to one. If not, it normalises them to one
+
+=cut
+
+sub fisher_yates_shuffle($) { 
+	my $deck = shift; # $deck is a reference to an array 
+	die "No deck provided!\n" unless @$deck; # must not be empty! 
+
+	my $i = @$deck; 
+	while (--$i) { 
+		my $j = int rand ($i+1); 
+		@$deck[$i,$j] = @$deck[$j,$i]; 
+	} 
+} 
+
+=pod
+=item * fisher_yates_shuffle ($arrayref)
+
+Perform a fisher yates shuffle on an arrayref passed in. Returns nothing. Constant memory and O(n) time
+
+=cut
+
+sub normalise_distribution($){
+     
+     my ($distribution) = @_;
+
+     my $dist_area = reduce{$a + $b}values(%$distribution);
+     
+     return(1) if($dist_area == 1);
+     #If the area is already 1, we have nothing to worry about!
+     
+     foreach my $key (keys(%$distribution)){
+     	
+     	$distribution->{$key} = ($distribution->{$key}/$dist_area)
+     }
+     
+     return(1);
+}
+
+=pod
+=item * normalise_distribution
+
+given a distribution in the form of a hash that is unnormalised, this function will normalise it so that the area sums to one. Note that this works on the hash passed in, so, nothing is returned.
+This is done so as to remain efficient with memory
+
+
+=cut
+
 
 
 1;
