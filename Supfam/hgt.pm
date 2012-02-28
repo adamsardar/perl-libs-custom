@@ -36,6 +36,7 @@ our @EXPORT    = qw(
 				RandomModelCorrPoisson
 				RandomModelCorrPoissonOptimised
 				calculatePosteriorQuantile
+				RandomModelPoissonOptimised
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -150,6 +151,78 @@ sub RandomModelPoisson($$$$$) {
 			# @ProbabilityIntervals is a precalculated hash of all the nodes in the sub-tree from the MRCA ($root) and where they sit in a stretched out sum of all branch lengths. $DeletedNode is a uniform random point along this line.
 			#The above while loop is used to find the suitable point at which 
 			my $DeletedNode = $ProbabilityHash->{$ProbabilityIntervals[$index]};
+			
+			map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedNode}{'Clade_Leaves'}};
+			delete($ModelCladeGenomesHash{$DeletedNode}) if ($TreeCacheHash->{$DeletedNode}{'is_Leaf'});		
+		}
+		
+		my $no_model_genomes = scalar(keys(%ModelCladeGenomesHash));
+		
+		$distribution->{$no_model_genomes}++;
+		push(@$RawResults,$no_model_genomes);
+		#Update the distribution of the run accordingly and store results in rawresults
+	}
+	
+	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
+	
+	#my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	#my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	
+	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+}
+
+=pod
+=item * RandomModelPoisson
+A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
+we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
+=cut
+
+sub RandomModelPoissonOptimised($$$$$) {
+	
+	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
+	
+	#$root is the root of the subtree or the most recent common ancestor
+
+    my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
+    push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
+    my %CladeGenomesHash;
+    map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
+           
+	my $IntervalTree = Tree::Interval->new; 
+   
+    my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
+    my $IntervalStartPoint = 0;
+        
+    foreach my $IntervalEndPoint (sort(keys(%$ProbabilityHash))) {
+    	
+    	my $Node = $ProbabilityHash->{$IntervalEndPoint};
+    	        	
+    	$IntervalTree->insert($IntervalStartPoint,$IntervalEndPoint,$Node);
+    	$IntervalStartPoint=$IntervalEndPoint+0.00000000000001;
+    }
+	
+	
+	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
+	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
+	
+	my @PoissonianDeletions = random_poisson($Iterations,$Expected_deletions); #Number of deletions in this iteration. This is drawn from a poissonian with mean equal to the number of deletions (the MLE)
+	
+	my $DeletionsNumberDistribution = {}; #This is a hash of the number of deletions modelled in the simualtion
+	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
+	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
+	
+	foreach my $DeletionSimultation (@PoissonianDeletions){ #For $Iterations
+		
+		my @UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions, drawn from a poissonian above, uniformly distributed across the tree.
+		my %ModelCladeGenomesHash = %CladeGenomesHash;
+		$DeletionsNumberDistribution->{$DeletionSimultation}++;
+		
+		foreach my $DeletionPoint (@UniformDeletions) {
+                    
+			my $index = 0; 
+			my $DeletedNode = $IntervalTree->find($DeletionPoint);
+			
+			#print $DeletedNode."\n";
 			
 			map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedNode}{'Clade_Leaves'}};
 			delete($ModelCladeGenomesHash{$DeletedNode}) if ($TreeCacheHash->{$DeletedNode}{'is_Leaf'});		
