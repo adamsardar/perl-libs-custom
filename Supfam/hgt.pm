@@ -40,18 +40,21 @@ our @EXPORT    = qw(
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
 
+use lib "$ENV{HOME}/bin/perl-libs-custom/";
+
 use strict;
 use warnings;
-use Bio::TreeIO;
 
-use Bio::Tree::TreeFunctionsI;
 use Time::HiRes;
 use POSIX qw(floor ceil);
 
 use Math::Random qw(random_poisson random_uniform random_uniform_integer);
+
+
+use lib "$ENV{HOME}/bin/perl-libs-custom/TreeInterval/lib/";
+use Tree::Interval;
 use Set::IntervalTree; #Used in optimised code for mapping deletion events onto the phylogenetic tree
 
-use lib "/home/sardar/bin/perl-libs-custom";
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
 
@@ -280,7 +283,7 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
     #Construct an interval tree for fast mapping of deletion events to the tree
     #Construct an interval tree (O(nlog(n)) time) so as to computepositions in clade most efficiently 
     
-    my $IntervalTree = Set::IntervalTree->new; 
+    my $IntervalTree = Tree::Interval->new; 
    
     my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
     my $IntervalStartPoint = 0;
@@ -289,7 +292,7 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
     	
     	my $Node = $ProbabilityHash->{$IntervalEndPoint};
     	        	
-    	$IntervalTree->insert($Node, $IntervalStartPoint, $IntervalEndPoint);
+    	$IntervalTree->insert($IntervalStartPoint,$IntervalEndPoint,$Node);
     	$IntervalStartPoint=$IntervalEndPoint;
     }
 
@@ -317,16 +320,9 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
 		
 		foreach my $DeletionPoint (@UniformDeletions) {
                 
-			my $DeletedBranchs = $IntervalTree->fetch($DeletionPoint,$DeletionPoint);#Find the node directly below the deletion
-			
-			print $$DeletedBranchs[0];
-			
-			print join("\n",@$DeletedBranchs);
-			print "\n";
-			
-			die "Overlapping regions in tree probability hash" unless(scalar(@$DeletedBranchs) == 1); #should only be one branch
+			my $DeletedBranch = $IntervalTree->find($DeletionPoint);#Find the node directly below the deletion
 
-			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$$DeletedBranchs[0]}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
+			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
 			my (undef,undef,undef,$NewDeletedGenomes) = IntUnDiff($TotalDeletedGenomes,$CurrentSimDeletedGenomes);
 			
 			push(@$TotalDeletedGenomes,@$NewDeletedGenomes);
