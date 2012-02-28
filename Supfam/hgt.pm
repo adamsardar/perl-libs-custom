@@ -35,22 +35,25 @@ our @EXPORT    = qw(
 				RandomModelPoisson
 				RandomModelCorrPoisson
 				calculatePosteriorQuantile
+				RandomModelPoissonOptimised
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
 
+use lib "$ENV{HOME}/bin/perl-libs-custom/";
+
 use strict;
 use warnings;
-use Bio::TreeIO;
 
-use Bio::Tree::TreeFunctionsI;
 use Time::HiRes;
 use POSIX qw(floor ceil);
 
 use Math::Random qw(random_poisson random_uniform random_uniform_integer);
+
+use lib "$ENV{HOME}/bin/perl-libs-custom/TreeInterval/lib/";
+use Tree::Interval;
 use Set::IntervalTree; #Used in optimised code for mapping deletion events onto the phylogenetic tree
 
-use lib "$ENV{HOME}/bin/perl-libs-custom";
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
 
@@ -174,6 +177,78 @@ A deletion model based on the poisson distribution of deletion events. Using the
 we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
 =cut
 
+sub RandomModelPoissonOptimised($$$$$) {
+	
+	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
+	
+	#$root is the root of the subtree or the most recent common ancestor
+
+    my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
+    push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
+    my %CladeGenomesHash;
+    map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
+           
+	my $IntervalTree = Tree::Interval->new; 
+   
+    my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
+    my $IntervalStartPoint = 0;
+        
+    foreach my $IntervalEndPoint (sort(keys(%$ProbabilityHash))) {
+    	
+    	my $Node = $ProbabilityHash->{$IntervalEndPoint};
+    	        	
+    	$IntervalTree->insert($IntervalStartPoint,$IntervalEndPoint,$Node);
+    	$IntervalStartPoint=$IntervalEndPoint+0.00000000000001;
+    }
+	
+	
+	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
+	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
+	
+	my @PoissonianDeletions = random_poisson($Iterations,$Expected_deletions); #Number of deletions in this iteration. This is drawn from a poissonian with mean equal to the number of deletions (the MLE)
+	
+	my $DeletionsNumberDistribution = {}; #This is a hash of the number of deletions modelled in the simualtion
+	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
+	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
+	
+	foreach my $DeletionSimultation (@PoissonianDeletions){ #For $Iterations
+		
+		my @UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions, drawn from a poissonian above, uniformly distributed across the tree.
+		my %ModelCladeGenomesHash = %CladeGenomesHash;
+		$DeletionsNumberDistribution->{$DeletionSimultation}++;
+		
+		foreach my $DeletionPoint (@UniformDeletions) {
+                    
+			my $index = 0; 
+			my $DeletedNode = $IntervalTree->find($DeletionPoint);
+			
+			#print $DeletedNode."\n";
+			
+			map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedNode}{'Clade_Leaves'}};
+			delete($ModelCladeGenomesHash{$DeletedNode}) if ($TreeCacheHash->{$DeletedNode}{'is_Leaf'});		
+		}
+		
+		my $no_model_genomes = scalar(keys(%ModelCladeGenomesHash));
+		
+		$distribution->{$no_model_genomes}++;
+		push(@$RawResults,$no_model_genomes);
+		#Update the distribution of the run accordingly and store results in rawresults
+	}
+	
+	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
+	
+	#my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	#my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	
+	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+}
+
+=pod
+=item * RandomModelPoisson
+A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
+we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
+=cut
+
 sub RandomModelCorrPoisson($$$$$) {
 	
 	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
@@ -263,6 +338,109 @@ we draw $itr intergers from the distribution and then scatter then, for each of 
 
 Unlike RandomModelPoisson, however, this implementation ignores results that would produce 0 (i.e. and extinct architecture) or
 100% abndance (i.e. with a deletion rate of 0 and exluded from our models).
+=cut
+
+
+sub RandomModelCorrPoissonOptimised($$$$$) {
+	
+	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
+	
+	#$root is the root of the subtree or the most recent common ancestor
+
+    my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
+    push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
+       
+    my @Weights = map{$TreeCacheHash->{$_}{'branch_length'}}@CladeGenomes; 
+      
+    #Construct an interval tree for fast mapping of deletion events to the tree
+    #Construct an interval tree (O(nlog(n)) time) so as to computepositions in clade most efficiently 
+    
+    my $IntervalTree = Tree::Interval->new; 
+   
+    my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
+    my $IntervalStartPoint = 0;
+        
+    foreach my $IntervalEndPoint (sort(keys(%$ProbabilityHash))) {
+    	
+    	my $Node = $ProbabilityHash->{$IntervalEndPoint};
+    	        	
+    	$IntervalTree->insert($IntervalStartPoint,$IntervalEndPoint,$Node);
+    	$IntervalStartPoint=$IntervalEndPoint;
+    }
+
+	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
+	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
+	
+	my @PoissonianDeletions = random_poisson($Iterations,$Expected_deletions); #Number of deletions in this iteration. This is drawn from a poissonian with mean equal to the number of deletions (the MLE)
+	
+	my $DeletionsNumberDistribution = {}; #This is a hash of the number of deletions modelled in the simualtion
+	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
+	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
+	
+	my @UniformDeletions;
+	
+	while  (@PoissonianDeletions){ #For $Iterations number of times
+	
+		my $DeletionSimultation = shift(@PoissonianDeletions); #remove the first entry in array and set it as the number of deletions in this simulation
+		
+		@UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
+		
+		my @ModelCladeGenomes = @CladeGenomes;
+		my $TotalDeletedGenomes = [];
+		
+		#$DeletionsNumberDistribution->{$DeletionSimultation}++; #Turn on if you want to measure how often a value is sampled
+		
+		foreach my $DeletionPoint (@UniformDeletions) {
+                
+			my $DeletedBranch = $IntervalTree->find($DeletionPoint);#Find the node directly below the deletion
+
+			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
+			my (undef,undef,undef,$NewDeletedGenomes) = IntUnDiff($TotalDeletedGenomes,$CurrentSimDeletedGenomes);
+			
+			push(@$TotalDeletedGenomes,@$NewDeletedGenomes);
+		}
+		
+		## test to see if the simulation has resulted in an entire clade possessing a domain architecture and nothing else (i.e. which would make us find a new MRCA and a deletion rate of 0)
+		#OR that the simulation has ended with no domain archtectures present anywhere OR that they are present everywhere, in which case we would set the deletion rate as zero
+	
+		my (undef,undef,undef,$ModelRemianingLeaves) = IntUnDiff($TotalDeletedGenomes,\@ModelCladeGenomes);;
+	
+		my $ModelFullCladeExclusive = 0; #Preallocate
+		my $no_model_genomes = scalar(@$ModelRemianingLeaves);
+		
+		if($no_model_genomes > 0){
+
+			my $ModelRoot = FindMRCA($TreeCacheHash,$root,$ModelRemianingLeaves);			
+			(undef,undef,$ModelFullCladeExclusive,undef) = IntUnDiff($TreeCacheHash->{$ModelRoot}{'Clade_Leaves'},$ModelRemianingLeaves)	; #		$ModelFullCladeExclusive will contain the members of the simulated clade beneath the simulated MRCA that aren't in the model genomes. If this is of size zero, then we should discount this result as it might incorporate bias 	
+		}
+		
+		if ($no_model_genomes == 0  || $no_model_genomes == scalar(@CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
+
+			push(@PoissonianDeletions,random_poisson(1,$Expected_deletions)); #push a number onto the end on the deletions array
+			next;
+		} #IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
+		# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
+		# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
+		
+		$distribution->{$no_model_genomes}++;
+		push(@$RawResults,$no_model_genomes);
+		#Update the distribution of the run accordingly and store results in rawresults
+	}
+	
+	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+}
+
+=pod
+=item * RandomModelCorrPoissonOptimised
+A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
+we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
+
+Unlike RandomModelPoisson, however, this implementation ignores results that would produce 0 (i.e. and extinct architecture) or
+100% abndance (i.e. with a deletion rate of 0 and exluded from our models).
+
+This has been optimised to run as fast as I can make it. It uses interval trees and is careful with memory. Hope that it works!
 =cut
 
 
