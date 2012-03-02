@@ -911,6 +911,40 @@ Given a tree as a treehash and a node, this function will provide a list of all 
 
 =cut
 
+sub MRCADistanceSum($$$){
+	
+	my ($TreeHash, $Node, $MRCA) = @_;
+	
+	return(0) if($Node eq $MRCA);
+	
+	my @NodeDescendants = @{$TreeHash->{$Node}{'all_Descendents'}};
+	die "MRCA $MRCA is actually a decendent of node $node\n" if(grep{$MRCA}@NodeDescendants);
+	
+	my @MRCADescendants = @{$TreeHash->{$MRCA}{'all_Descendents'}};
+	die "Node $Node is not a decendent of MRCA $MRCA\n" unless(grep{$Node}@NodeDescendants);
+	#Check that everything is proper with the input
+	
+	my $IncrementalAncestor = $TreeHash->{$Node}{'ancestor'};
+	
+	my $BranchSum = $TreeHash->{$Node}{'branch_length'};
+		
+	while ($IncrementalAncestor ne $MRCA){
+	
+		$BranchSum += $TreeHash->{$IncrementalAncestor}{'branch_length'};
+		$IncrementalAncestor = $TreeHash->{$IncrementalAncestor}{'ancestor'};
+	}	
+	
+	return($BranchSum);
+}
+
+=pod
+=item *MRCADistance($TreeHash, $Node, $MRCA)
+
+Function to simply sum all of then branch lengths between a node and it's MRCA
+
+=cut
+
+
 sub FindTrueRoot($$$) {
 	
 	my ($treehash,$OutgroupLeaves,$root) = @_;

@@ -34,6 +34,7 @@ our @EXPORT    = qw(
 				DeletedPoisson
 				RandomModelPoisson
 				RandomModelCorrPoisson
+				RandomModelCorrPoissonOptimised
 				calculatePosteriorQuantile
 				RandomModelPoissonOptimised
                   );
@@ -112,6 +113,103 @@ This function looks at deletions of a particular domain archtecture of interest.
  time distance of the clade root from its parent and look at the clades of its children nodes. If no examples of the dom arch are found, increase the number of deletions by one and move on. 
 Deleted($BioPerltreeobject,$CladeParentNode,$dels,$time,$GenomesPossessingDomainArchitecture)
 =cut
+
+sub DeletedJulianDetailed($$$$$$$){ 
+	#($subtree,0,0,$NodesObserved)
+	my ($MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$treeroot,$DomArch) = @_;
+	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
+	
+	my $DeletionPoints = []; #This will be a list of nodes that are decendents to deletion points
+	
+    my @InternalNodes = @{$TreeCacheHash->{$MRCA}{'each_Descendent'}};
+    @InternalNodes = ($MRCA) if($TreeCacheHash->{$MRCA}{'is_Leaf'});
+    #InternalNodes will be a list of all nodes within the tree, grown in the loop below. Some initial values are thrown in here.
+    my @GenomesWithTraits = keys(%{$HashOfGenomesObserved});
+      
+    #  print Dumper($HashOfGenomesObserved);
+      
+       map{if($HashOfGenomesObserved->{$_} > 1){print $DomArch."\n"; print $_."\n"; die '$HashOfGenomesObserved should have UNIQUE key value pairs. '.$_.' is non unique. There is a serious issue with the way that data is inputed into the hash'."\n";}}(keys(%{$HashOfGenomesObserved}));
+       # Error check. Note that this sub requires that the two lists of genomes be unique (no internal repeats in the lists)!
+		
+	   while(scalar(@InternalNodes)){
+	    	
+	    	my $node = pop(@InternalNodes);
+	    	
+	    	my $DistanceFromAncestor = $TreeCacheHash->{$node}{'branch_length'};
+ 	
+	    	my @NodeDescendents = map{$TreeCacheHash->{$_}{'node_id'}}@{$TreeCacheHash->{$node}{'Clade_Leaves'}}  ;# All descendent leaf ids
+			@NodeDescendents = ($TreeCacheHash->{$node}{'node_id'}) if($TreeCacheHash->{$node}{'is_Leaf'}); # This allows for when the node is a leaf and hence has no descendents
+	  	     	   	  	   
+			my (undef,$Intersection,undef,undef) = IntUnDiff(\@NodeDescendents,\@GenomesWithTraits);		
+					
+			if(scalar(@$Intersection)){ # if there is any overlap between the list of genomes containing dom arch and those in the clade being studied
+		
+	    		$time += $DistanceFromAncestor;
+	    		
+	    		unless ($TreeCacheHash->{$node}{'is_Leaf'}){
+	    			
+					my @NodeChildren = @{$TreeCacheHash->{$node}{'each_Descendent'}};
+	    			push(@InternalNodes,@NodeChildren);
+	    		}
+	 
+	    	}else{
+	    		
+	    		$time += $DistanceFromAncestor/2;
+	    		$dels++;
+	    		
+	    		push(@$DeletionPoints,$node);
+	    	}
+	    }
+	   
+	   #calculate the distances between deletion points now.
+	   
+	   #Find MRCA of two points
+	   #Take two leaves, one from the clades beneath each deletion
+	  
+	   #Calculate the distance between these two points
+	   #Write a sub that sums ancestral distance to MRCA. Then add half the distance above branch
+	   
+	   my $InterDeletionDistances = [];
+	   
+		my $iter = combinations(\@$DeletionPoints,2);
+		#Caculate all n choose 2 combinations. We shall study the distances between each point
+		
+		while (my $combination = $iter->next) {
+		   
+		   my ($DelPointA,$DelPointB) = @$combination;
+		   
+		   my $LeafA = ${$TreeCacheHash->{$DelPointA}{'Clade_Leaves'}}[0];
+		   my $LeafB = ${$TreeCacheHash->{$DelPointB}{'Clade_Leaves'}}[0];
+		   
+		   my $MRCA = FindMRCA($TreeCacheHash,$root,[$LeafA,$LeafB]);
+		  
+		  my $InterDeletionPoint = 0;
+		  $InterDeletionPoint += MRCADistanceSum($TreeCacheHash,$DelPointA,$MRCA);
+		  $InterDeletionPoint += MRCADistanceSum($TreeCacheHash,$DelPointB,$MRCA);
+		   
+		  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
+		  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
+		
+		  push(@$InterDeletionDistances,$InterDeletionPoint);
+		  #$InterDeletionPoint is the distance between two deletion points. We assume that a deletion occurs midway on a branch, hence the subtraction of the values from the total sum of the points distance from the MRCA
+		}
+	   
+	   #Push onto array of distances
+	   
+		return($dels,$time,$InterDeletionDistances);
+}
+
+=pod
+=item * DeletedJulianDetailed($MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$treeroot,$DomArch)
+
+TThis function looks at deletions of a particular domain archtecture of interest. The algorithm is as per Julian Gough's original hgt script. Given a tree and a list of genomes
+ that posses that domain architecture, this function moves through the tree, level by level, clade by clade. If a clade contains an example of the domain arch, add the evolutionary
+ time distance of the clade root from its parent and look at the clades of its children nodes. If no examples of the dom arch are found, increase the number of deletions by one and move on. 
+
+this is a more vebose version of  DeletedJulian. It calculates where all deletions have occured before calculating all n choose 2 distances between them.
+
+=cut
+
 
 sub RandomModelPoisson($$$$$) {
 	
@@ -610,6 +708,8 @@ sub calculatePosteriorQuantile($$$$){
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations,$CladeSize) = @_;
 		
 	$DistributionHash->{$SingleValue}++;
+	#Stop a later step from kicking out because a there is no value in the distribution
+	
 	my $NumberOfSimulationsLT = 0;
 	
 	my @DistributionIndicies = keys(%$DistributionHash);
@@ -628,7 +728,7 @@ sub calculatePosteriorQuantile($$$$){
 	my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
 	$NumberOfSimulationsLT += $DegeneracyContribution;
 	#$NumberOfSimulationsLT += $Degeneracy/2;
-	
+
 	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
 	
 	$DistributionHash->{$SingleValue}--;
@@ -710,6 +810,98 @@ sub NegativeDomArchObservations{
 This is a sub to calculate the likelihood of a node containing the domain architecture in question, given previous observations (stored in $LHHash). Note the difference between these two functions:
 One assumes that the inputed node has had the domain architecture observed in its genomes. Using strict dollo parsimony therefore, all later references to whther an ancestor contains that dom arch will
 be one, as it is the only possible way to explain the previously observed sighiting of the domain architecture.
+=cut
+
+sub run_HGT_Analysis_DA($$$$$$$$$$$$){
+		
+	my ($TreeCacheHash,$root,$DomCombGenomeHash,$TreeGenomesArrayRef,$FalseNegativeRate,$Iterations,$CachedResults,$model,$store,$DomArch,$RAWSIM_FH,$DELS_FH) = @_;		
+	
+	my @TreeGenomesNodeIDs = @$TreeGenomesArrayRef;
+	
+	my ($CladeGenomes,$NodesObserved);
+		
+		my $NodeName2NodeID = {};
+		map{$NodeName2NodeID->{$TreeCacheHash->{$_}{'node_id'}}= $_ }@TreeGenomesNodeIDs; #Generate a lookup table of leaf_name 2 node_id
+		
+		my $HashOfGenomesObserved = $DomCombGenomeHash->{$DomArch};
+		@$NodesObserved = keys(%$HashOfGenomesObserved);
+		
+		my @NodeIDsObserved = @{$NodeName2NodeID}{@$NodesObserved};#Hash slice to extract the node ids of the genomes observed
+		#Get the node IDs as the follwoing function doesn't work with the raw node tags
+
+		my $MRCA;
+		my $deletion_rate;
+		my ($dels, $time) = (0,0);
+		
+		unless(scalar(@$NodesObserved) == 1){
+			
+			$MRCA = FindMRCA($TreeCacheHash,$root,\@NodeIDsObserved);#($TreeCacheHash,$root,$LeavesArrayRef)
+
+			 if($model eq 'Julian' || $model eq 'poisson' || $model eq 'corrpoisson'){
+			 	
+					($dels, $time) = DeletedJulian($MRCA,0,0,$HashOfGenomesObserved,$TreeCacheHash,$root,$DomArch); # ($tree,$AncestorNodeID,$dels,$time,$GenomesOfDomArch) - calculate deltion rate over tree	
+					
+				}else{
+					die "Inappropriate model selected";
+				}
+				
+			$deletion_rate = $dels/$time;
+			
+		}else{
+			$deletion_rate = 0;	
+			$MRCA = $NodeIDsObserved[0] ; #Most Recent Common Ancestor
+		}
+				
+		@$CladeGenomes = @{$TreeCacheHash->{$MRCA}{'Clade_Leaves'}}; # Get all leaf genomes in this clade	
+		@$CladeGenomes = ($MRCA) if($TreeCacheHash->{$MRCA}{'is_Leaf'});
+				
+		print $DELS_FH "$DomArch:$deletion_rate:$dels\n" unless ($deletion_rate == 0);
+		#print "$DomArch:$deletion_rate\n";
+		
+		my ($selftest,$distribution,$RawResults,$DeletionsNumberDistribution);
+				
+		if($deletion_rate > 0){
+	
+			unless($CachedResults->{"$deletion_rate:@$CladeGenomes"} && $store){
+						
+				if($model eq 'Julian'){
+									
+					($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = RandomModelJulian($MRCA,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash);
+																					
+				}elsif($model eq 'poisson'){
+					
+					($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = RandomModelPoisson($MRCA,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash);
+
+				}elsif($model eq 'corrpoisson'){
+					
+					($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = RandomModelCorrPoisson($MRCA,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash);
+
+				}else{
+					die "No appropriate model selected";
+				}
+				
+			$CachedResults->{"$deletion_rate:@$CladeGenomes"} = [$selftest,$distribution,$RawResults,$DeletionsNumberDistribution];		
+			
+			}else{
+				($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = @{$CachedResults->{"$deletion_rate:@$CladeGenomes"}};
+			}
+			
+			my $RawSimData = join(',',@$RawResults);
+			print $RAWSIM_FH @$CladeGenomes.','.@$NodesObserved.':'.$DomArch.':'.$RawSimData."\n";
+			#Print simulation data out to file so as to allow for testing of convergence
+			
+		}else{
+			
+			($selftest,$distribution) = ('NULL',{});
+		}
+		
+		return($deletion_rate,$selftest,$distribution,$dels,$time,$NodesObserved,$CladeGenomes,$DeletionsNumberDistribution);
+}
+
+=pod * run_HGT_Analysis_DA
+
+A wrapper around the core hgt simultaion steps. This is to keep code more maintainable and to improve the readability of the orginal script.It's kinda ugly, but hugly here saves ugliness in the core script.
+
 =cut
 
 1;
