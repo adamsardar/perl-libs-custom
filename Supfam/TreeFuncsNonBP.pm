@@ -918,7 +918,7 @@ sub MRCADistanceSum($$$){
 	return(0) if($Node eq $MRCA);
 	
 	my @NodeDescendants = @{$TreeHash->{$Node}{'all_Descendents'}};
-	die "MRCA $MRCA is actually a decendent of node $node\n" if(grep{$MRCA}@NodeDescendants);
+	die "MRCA $MRCA is actually a decendent of node $Node\n" if(grep{$MRCA}@NodeDescendants);
 	
 	my @MRCADescendants = @{$TreeHash->{$MRCA}{'all_Descendents'}};
 	die "Node $Node is not a decendent of MRCA $MRCA\n" unless(grep{$Node}@NodeDescendants);
