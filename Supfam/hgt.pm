@@ -37,6 +37,8 @@ our @EXPORT    = qw(
 				RandomModelCorrPoisson
 				RandomModelCorrPoissonOptimised
 				calculatePosteriorQuantile
+				calculateOldStylePosteriorQuantile
+				calculateJulianStylePosteriorQuantile
 				RandomModelPoissonOptimised
                   );
 our @EXPORT_OK = qw();
@@ -701,7 +703,7 @@ sub RandomModelJulian($$$$$) {
 	my $Expected_deletions = $deletion_rate*$TotalBranchLength;
 	
 	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
-	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
+	my $distribution = {}; # This is ultimately what the dicalculatePosteriorQuantilestributon of the model runs will be stored in
 	
 	my $UniformDeletions = [];
 	
@@ -822,7 +824,8 @@ sub calculatePosteriorQuantile($$$$){
 	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
 	my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
 	$NumberOfSimulationsLT += $DegeneracyContribution;
-	#$NumberOfSimulationsLT += $Degeneracy/2;
+	
+	#$NumberOfSimulationsLT += ($Degeneracy/2);
 
 	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
 	
@@ -837,6 +840,68 @@ sub calculatePosteriorQuantile($$$$){
 
 Calculates where in the total area in a probability distribution a single value occurs. Returns a value between 0 and 1. These should be uniformly distributed, from the simple fact that sum(andy distribution)
 =1 and we are choosing a unifrom point from theis area.
+=cut
+
+sub calculateOldStylePosteriorQuantile($$$$){
+
+	my ($SingleValue,$distribution,$NumberOfSimulations,$CladeSize) = @_;
+		
+  my $CumulativeCount= 0;
+  my @CumulativeDistribution; #(P(Nm<nr)) nr (number of genomes in reality) is the index, Nm is the random variable
+
+	
+#Create cumulative distibution list
+      for my $NumberOfGenomes (0 .. $CladeSize){
+		$CumulativeCount += $distribution->{$NumberOfGenomes} if(exists($distribution->{$NumberOfGenomes})); # Cumulative count is a sum of the frequency of genome observation up to this point	
+        $CumulativeDistribution[$NumberOfGenomes]=$CumulativeCount;  
+ 	
+      }
+ 	
+  	
+    my $ProbLT = ($CumulativeDistribution[$SingleValue-1])/$NumberOfSimulations;#Cumlative probability of less genomes in model simulations than in reality
+    
+	return($ProbLT);
+}
+
+
+=pod * calculateOldStylePosteriorQuantile($SingleValue,$DistributionHash)
+
+An older implementation of the posterior quantile test that resulted in incorrect values. Kept in the repo for legacy.
+
+=cut
+
+sub calculateJulianStylePosteriorQuantile($$$$){
+
+	my ($SingleValue,$dist,$NumberOfSimulations,$CladeSize) = @_;
+		
+	
+my %distribution=%$dist;
+
+my $ii=0;
+my $gennum = $SingleValue;
+
+
+for my $i (0 .. $CladeSize){
+	
+if ($i == $gennum){
+
+	last;
+}
+
+if (exists($distribution{$i})){
+
+	$ii=$ii+$distribution{$i};
+  }
+}
+
+	return($ii/$NumberOfSimulations);
+}
+
+
+=pod * calculateJulianStylePosteriorQuantile($SingleValue,$DistributionHash)
+
+An older implementation of the posterior quantile test as per Julian Gough's orginal implementation of hgt.pl. Should be equivilent to calculateOldStylePosteriorQuantile
+
 =cut
 
 
