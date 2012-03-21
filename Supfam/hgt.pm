@@ -35,10 +35,12 @@ our @EXPORT    = qw(
 				DeletedPoisson
 				RandomModelPoisson
 				RandomModelCorrPoisson
+				RandomModelCorrPoissonDeletionDetailed
 				RandomModelCorrPoissonOptimised
 				calculatePosteriorQuantile
 				calculateOldStylePosteriorQuantile
 				calculateJulianStylePosteriorQuantile
+				calculateContinuousPosteriorQuantile
 				RandomModelPoissonOptimised
                   );
 our @EXPORT_OK = qw();
@@ -54,14 +56,12 @@ use POSIX qw(floor ceil);
 
 use Math::Random qw(random_poisson random_uniform random_uniform_integer);
 
-use lib "$ENV{HOME}/bin/perl-libs-custom/TreeInterval/lib/";
-use Tree::Interval;
-use Set::IntervalTree; #Used in optimised code for mapping deletion events onto the phylogenetic tree
-
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
 
 use Data::Dumper;
+
+use Algorithm::Combinatorics qw(combinations);
 
 sub DeletedJulian($$$$$$$){ 
 	#($subtree,0,0,$NodesObserved)
@@ -118,11 +118,11 @@ Deleted($BioPerltreeobject,$CladeParentNode,$dels,$time,$GenomesPossessingDomain
 =cut
 
 sub DeletedJulianDetailed($$$$$$){ 
-	#($subtree,0,0,$NodesObserved)
+	
 	my ($MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$treeroot,$DomArch) = @_;
 	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
 	
-	my $DeletionPoints = []; #This will be a list of nodes that are decendents to deletion points
+	my $DeletionPoints = []; #This will be a list of nodes that are direct decendents to deletion points
 	
     my @InternalNodes = @{$TreeCacheHash->{$MRCA}{'each_Descendent'}};
     @InternalNodes = ($MRCA) if($TreeCacheHash->{$MRCA}{'is_Leaf'});
@@ -174,32 +174,66 @@ sub DeletedJulianDetailed($$$$$$){
 	   
 	   my $InterDeletionDistances = [];
 	   
-		my $iter = combinations(\@$DeletionPoints,2);
-		#Caculate all n choose 2 combinations. We shall study the distances between each point
-		
-		while (my $combination = $iter->next) {
-		   
-		   my ($DelPointA,$DelPointB) = @$combination;
-		   
-		   my $LeafA = ${$TreeCacheHash->{$DelPointA}{'Clade_Leaves'}}[0];
-		   my $LeafB = ${$TreeCacheHash->{$DelPointB}{'Clade_Leaves'}}[0];
-		   
-		   my $MRCA = FindMRCA($TreeCacheHash,$treeroot,[$LeafA,$LeafB]);
-		  
-		  my $InterDeletionPoint = 0;
-		  $InterDeletionPoint += MRCADistanceSum($TreeCacheHash,$DelPointA,$MRCA);
-		  $InterDeletionPoint += MRCADistanceSum($TreeCacheHash,$DelPointB,$MRCA);
-		   
-		  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
-		  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
-		
-		  push(@$InterDeletionDistances,$InterDeletionPoint);
-		  #$InterDeletionPoint is the distance between two deletion points. We assume that a deletion occurs midway on a branch, hence the subtraction of the values from the total sum of the points distance from the MRCA
-		}
 	   
+	   unless(scalar(@$DeletionPoints) < 2){
+	   	
+			my $iter = combinations(\@$DeletionPoints,2);
+			#Caculate all n choose 2 combinations. We shall study the distances between each point
+			
+			while (my $combination = $iter->next) {
+			   
+			  my ($DelPointA,$DelPointB) = @$combination;
+			  
+			  my $ArrayRefA = $TreeCacheHash->{$DelPointA}{'Clade_Leaves'};
+			  $ArrayRefA = [$DelPointA] if($TreeCacheHash->{$DelPointA}{'is_Leaf'} == 1);
+			  
+			  my $ArrayRefB = $TreeCacheHash->{$DelPointB}{'Clade_Leaves'};
+			  $ArrayRefB = [$DelPointB] if($TreeCacheHash->{$DelPointB}{'is_Leaf'} == 1);
+			  
+			  
+	#		  print $DelPointA."\n";
+	#		  print " => Del Point A\n";
+	#		  
+	#		  print join("\n",@$ArrayRefA);
+	#		  print "\nArray A\n";
+	#		  
+	#		  print $DelPointB."\n";
+	#		  print " => Del Point B\n";
+	#		  
+	#		  print join("\n",@$ArrayRefB);
+	#		  print "\nArray B\n";
+			  
+			  
+			  my ($Union,undef,undef,undef)=IntUnDiff($ArrayRefA,$ArrayRefB);
+			  #All the unique leaves beneath the two deletion points being studied
+			  
+			  next if(scalar(@$Union) == 1);	   
+			   
+			  my $MRCA = FindMRCA($TreeCacheHash,$treeroot,$Union);
+			  
+			 # print $MRCA."\n";
+			 # print " => MRCA\n";
+			  
+			  my $InterDeletionPoint = 0;
+			  
+			  my $ABranchSum = MRCADistanceSum($TreeCacheHash,$DelPointA,$MRCA);
+			  $InterDeletionPoint += $ABranchSum;
+			  
+			  my $BBranchSum = MRCADistanceSum($TreeCacheHash,$DelPointB,$MRCA);
+			  $InterDeletionPoint += $BBranchSum;
+			  #Add the distance from the nodes from MRCA to the sum
+			   
+			  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
+			  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
+				#subtract half the branch length between nodes and their direct ancestor. This is because we don't know exactly where on the branch this occured.
+			
+			  push(@$InterDeletionDistances,$InterDeletionPoint);
+			  #$InterDeletionPoint is the distance between two deletion points. We assume that a deletion occurs midway on a branch, hence the subtraction of the values from the total sum of the points distance from the MRCA
+			}
+	   }
+
 	   #Push onto array of distances
-	   
-		return($dels,$time,$InterDeletionDistances);
+	   return($dels,$time,$InterDeletionDistances);
 }
 
 =pod
@@ -524,7 +558,7 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
 }
 
 =pod
-=item * RandomModelCorrPoissonDeletionDetailed
+=item * RandomcalculateContinuousPosteriorQuantileModelCorrPoissonDeletionDetailed
 
 A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
 we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
@@ -841,6 +875,31 @@ sub calculatePosteriorQuantile($$$$){
 Calculates where in the total area in a probability distribution a single value occurs. Returns a value between 0 and 1. These should be uniformly distributed, from the simple fact that sum(andy distribution)
 =1 and we are choosing a unifrom point from theis area.
 =cut
+
+
+sub calculateContinuousPosteriorQuantile($$){
+
+	my ($SingleValue,$DistributionValues) = @_;
+	
+	my $NumberOfSimulationsLT = 0;
+	
+	map{$NumberOfSimulationsLT++ if($_ <= $SingleValue)}@$DistributionValues;
+	
+	my $PosteriorQuantile = $NumberOfSimulationsLT/scalar(@$DistributionValues);
+	
+	return($PosteriorQuantile);
+}
+
+
+=pod * calculateContinuousPosteriorQuantile($SingleValue,$DistributionHash)
+
+Calculates where in the total area in a probability distribution a single value occurs. Returns a value between 0 and 1. These should be uniformly distributed, from the simple fact that sum(andy distribution)
+=1 and we are choosing a unifrom point from theis area.
+
+This is an extension from calculatePosteriorQuantile, which is a finction for discrete probability distributions
+=cut
+
+
 
 sub calculateOldStylePosteriorQuantile($$$$){
 

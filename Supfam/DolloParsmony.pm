@@ -203,11 +203,12 @@ sub PopulateDolloPStateAssingments($){
 		my ($TraitPosition,$LeavesWithTrait,$MRCA) = ($TraitDetailsHash->{$trait}[0],$TraitDetailsHash->{$trait}[1],$TraitDetailsHash->{$trait}[2]);
 
 		my @AllDescendents = @{$TreeHash->{$node}{'all_Descendents'}};
+		my @CladeLeaves = @{$TreeHash->{$node}{'Clade_Leaves'}};
 		
 		next if(grep{m/$MRCA/}@AllDescendents); #If the MRCA of the trait is below this node, then we assume that it must have been created later
 		next if (scalar(@$LeavesWithTrait) == 0); #There shoudln't really be any of these if the input file was appropriately formatted, but just in case.
 		
-		my (undef,$Intersection,undef,undef) = IntUnDiff($LeavesWithTrait,\@AllDescendents); # InUnDiff returns ($Union,$Intersection,$ListAExclusive,$ListBExclusive)
+		my (undef,$Intersection,undef,undef) = IntUnDiff($LeavesWithTrait,\@CladeLeaves); # InUnDiff returns ($Union,$Intersection,$ListAExclusive,$ListBExclusive)
 	
 		$TempStateArray[$TraitPosition] = 1 if(scalar(@$Intersection)); #i.e. if any leaves below the node being studied have the trait, then we assume it present here.
 	}
@@ -310,6 +311,7 @@ sub DOLLOP_Ancestral_Trait_Changes_in_Clade{ #Left out the prototyping arguments
 	if($node eq $root){
 		
 		@AncestorStates = (0) x scalar(@$traitlabelsarray); #If the node is the root, then all prescent traits are assumed to have been created beforehand. So it's ancestor will be all 0's.
+	
 	}else{
 	
 		my $Ancestor = $TreeCacheHash->{$node}{'ancestor'};
@@ -333,6 +335,7 @@ sub DOLLOP_Ancestral_Trait_Changes_in_Clade{ #Left out the prototyping arguments
 		if($AncestorState - $NodeState < 0){
 	
 			$no_creations ++;
+			
 		}elsif($AncestorState - $NodeState > 0){
 	
 			$no_deletions ++;
@@ -370,7 +373,7 @@ sub DOLLOP_Ancestral_Trait_Changes_in_Clade{ #Left out the prototyping arguments
 		$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Created'} = $no_creations;
 		$TreeCacheHash->{$node}{'DOLLOP_Total_Number_Deleted'} = $no_deletions;	
 			
-		return($no_creations,$no_deletions);	
+		return($no_creations,$no_deletions);
 	}
 }
 

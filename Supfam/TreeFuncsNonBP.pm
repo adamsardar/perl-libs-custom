@@ -46,6 +46,7 @@ our @EXPORT    = qw(
 			FindMRCA
 			Newick2Node
 			DolloPLeavesWithTrait
+			MRCADistanceSum
 			RAxMLLeavesWithTrait
 			Node2Newick
 			Splice_Node
@@ -888,7 +889,7 @@ Note that this function alls you to specify and ancestor of a node, allowing you
 
 sub AllAncestors($$){
 	
-	my ($TreeHash, $Node) = @_;
+	my ($TreeHash,$Node) = @_;
 	
 	my $IncrementalAncestor = $TreeHash->{$Node}{'ancestor'};
 	
@@ -913,15 +914,23 @@ Given a tree as a treehash and a node, this function will provide a list of all 
 
 sub MRCADistanceSum($$$){
 	
-	my ($TreeHash, $Node, $MRCA) = @_;
+	my ($TreeHash,$Node,$MRCA) = @_;
 	
 	return(0) if($Node eq $MRCA);
 	
 	my @NodeDescendants = @{$TreeHash->{$Node}{'all_Descendents'}};
-	die "MRCA $MRCA is actually a decendent of node $Node\n" if(grep{$MRCA}@NodeDescendants);
+	
+	my $NodeDescendentCheckHash={};
+	map{$NodeDescendentCheckHash->{$_}=undef}@NodeDescendants;
+	
+	die "MRCA $MRCA is actually a decendent of node $Node\n" if(exists($NodeDescendentCheckHash->{$MRCA}));
 	
 	my @MRCADescendants = @{$TreeHash->{$MRCA}{'all_Descendents'}};
-	die "Node $Node is not a decendent of MRCA $MRCA\n" unless(grep{$Node}@NodeDescendants);
+	
+	my $MRCADescendentCheckHash = {};
+	map{$MRCADescendentCheckHash->{$_}=undef}@MRCADescendants;
+	
+	die "Node $Node is not a decendent of MRCA $MRCA\n" unless(exists($MRCADescendentCheckHash->{$Node}));
 	#Check that everything is proper with the input
 	
 	my $IncrementalAncestor = $TreeHash->{$Node}{'ancestor'};
@@ -938,7 +947,7 @@ sub MRCADistanceSum($$$){
 }
 
 =pod
-=item *MRCADistance($TreeHash, $Node, $MRCA)
+=item *MRCADistanceSum($TreeHash, $Node, $MRCA)
 
 Function to simply sum all of then branch lengths between a node and it's MRCA
 
