@@ -529,9 +529,10 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
 		
 		my $no_model_genomes = scalar(@ModelRemianingLeaves);
 		
+		my $ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
+		
 		if($no_model_genomes > 0){
-
-			my $ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
+			
 			my @ModelFullCladeLeaves = @{$TreeCacheHash->{$ModelRoot}{'Clade_Leaves'}};
 						
 			(undef,undef,$ModelFullCladeExclusive,undef) = IntUnDiff(\@ModelFullCladeLeaves,\@ModelRemianingLeaves)	; #		$ModelFullCladeExclusive will contain the members of the simulated clade beneath the simulated MRCA that aren't in the model genomes. If this is of size zero, then we should discount this result as it might incorporate bias 	
@@ -546,8 +547,11 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
 		# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
 
 		#Calculate Deletion rates ad distances within model, then push onto an array of simulated distaces
-
-		my ($dels,$time,$SingleSimInterDeletionDistances) = DeletedJulianDetailed($root,0,0,\%ModelCladeGenomesHash,$TreeCacheHash,'Simulation of DA');
+				
+		my ($dels,$time,$SingleSimInterDeletionDistances) = DeletedJulianDetailed($ModelRoot,0,0,\%ModelCladeGenomesHash,$TreeCacheHash,'Simulation of DA');
+		
+		#($dels, $time, $InterDeletionDistances) = DeletedJulianDetailed($MRCA,0,0,$HashOfGenomesObserved,$TreeCacheHash,$DomArch); # $MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$DomArch - calculate deltion rate over tree	
+					
 		
 		@$SimulatedInterDeletionDistances = (@$SimulatedInterDeletionDistances,@$SingleSimInterDeletionDistances);
 	}
