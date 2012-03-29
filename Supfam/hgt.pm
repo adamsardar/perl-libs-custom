@@ -40,6 +40,7 @@ our @EXPORT    = qw(
 				calculatePosteriorQuantile
 				calculateOldStylePosteriorQuantile
 				calculateJulianStylePosteriorQuantile
+				calculateHashContinuousPosteriorQuantile
 				calculateContinuousPosteriorQuantile
 				RandomModelPoissonOptimised
                   );
@@ -901,6 +902,52 @@ Calculates where in the total area in a probability distribution a single value 
 =1 and we are choosing a unifrom point from theis area.
 
 This is an extension from calculatePosteriorQuantile, which is a finction for discrete probability distributions
+=cut
+
+sub calculateHashContinuousPosteriorQuantile($$$){
+
+
+	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
+		
+	$DistributionHash->{$SingleValue}++;
+	#Stop a later step from kicking out because a there is no value in the distribution
+	
+	my $NumberOfSimulationsLT = 0;
+	
+	my @DistributionIndicies = keys(%$DistributionHash);
+
+	foreach my $item  (@DistributionIndicies){
+		
+		last if($item == $SingleValue);
+		
+		if (exists($DistributionHash->{$item})){
+			
+			$NumberOfSimulationsLT += $DistributionHash->{$item};
+		}
+   }
+	
+	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
+	my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
+	$NumberOfSimulationsLT += $DegeneracyContribution;
+	
+	#$NumberOfSimulationsLT += ($Degeneracy/2);
+
+	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
+	
+	$DistributionHash->{$SingleValue}--;
+	#Undo the modification to the distribution
+	
+	return($PosteriorQuantile);
+}
+
+=pod * calculateContinuousPosteriorQuantile($SingleValue,$DistributionHash)
+
+Calculates where in the total area in a probability distribution a single value occurs. Returns a value between 0 and 1. These should be uniformly distributed, from the simple fact that sum(andy distribution)
+=1 and we are choosing a unifrom point from theis area.
+
+This is an extension from calculatePosteriorQuantile, which is a finction for discrete probability distributions
+
+This function uses a hash to loop through the distribution. Pass this into the funtion
 =cut
 
 
