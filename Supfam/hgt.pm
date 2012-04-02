@@ -530,9 +530,11 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
 		
 		my $no_model_genomes = scalar(@ModelRemianingLeaves);
 		
-		my $ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
+		my $ModelRoot;
 		
 		if($no_model_genomes > 0){
+			
+			$ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
 			
 			my @ModelFullCladeLeaves = @{$TreeCacheHash->{$ModelRoot}{'Clade_Leaves'}};
 						

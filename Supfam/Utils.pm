@@ -100,6 +100,8 @@ sub IntUnDiff($$){
 	my $ListALookup={};
 	my $ListBLookup={};
 	
+	map{die if $_ ~~ undef}(@$ListA,@$ListB);
+	
 	map{$ListALookup->{$_} = 1}@$ListA;
 	map{$ListBLookup->{$_} = 1}@$ListB;
 	#Initialise a hash for lookup later
