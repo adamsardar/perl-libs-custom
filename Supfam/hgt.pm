@@ -916,7 +916,8 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	
 	my $NumberOfSimulationsLT = 0;
 	
-	my @DistributionIndicies = keys(%$DistributionHash);
+	my @DistributionIndicies = sort{$a <=> $b}(keys(%$DistributionHash));
+	#Sort the indicies numerically
 
 	foreach my $item  (@DistributionIndicies){
 		
