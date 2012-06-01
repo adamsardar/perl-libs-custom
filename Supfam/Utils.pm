@@ -408,7 +408,7 @@ sub calculate_ZScore($){
 	my $TotalSum = reduce{$a + $b}values(%$ValuesHash);
 	my $SampleMean = $TotalSum/$NumberValues;
     my $TotalSumOfSquares = reduce{$a**2 + $b**2}values(%$ValuesHash);
-    my $SampleStDev = sqrt($TotalSumOfSquares/$NumberValues - $SampleMean**2);
+    my $SampleStDev = sqrt(abs($TotalSumOfSquares/$NumberValues - $SampleMean**2));
     
     my $ZscoresHash = {};
     
