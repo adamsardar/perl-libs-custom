@@ -59,6 +59,7 @@ use Math::Random qw(random_poisson random_uniform random_uniform_integer);
 
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
+use Supfam::PointTree; #For use in the optimised CorrPoiss
 
 use Data::Dumper;
 
@@ -208,7 +209,7 @@ sub DeletedJulianDetailed($$$$$$){
 			  my ($Union,undef,undef,undef)=IntUnDiff($ArrayRefA,$ArrayRefB);
 			  #All the unique leaves beneath the two deletion points being studied
 			  
-			  next if(scalar(@$Union) == 1);	   
+			  next if(scalar(@$Union) == 1);
 			   
 			  my $MRCA = FindMRCA($TreeCacheHash,$treeroot,$Union);
 			  
@@ -490,7 +491,6 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
            
 	my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
 	my @ProbabilityIntervals = sort(keys(%$ProbabilityHash));
-	
 	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
 	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
 	
@@ -552,8 +552,7 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
 		#Calculate Deletion rates ad distances within model, then push onto an array of simulated distaces
 				
 		my ($dels,$time,$SingleSimInterDeletionDistances) = DeletedJulianDetailed($ModelRoot,0,0,\%ModelCladeGenomesHash,$TreeCacheHash,'Simulation of DA');
-		
-		#($dels, $time, $InterDeletionDistances) = DeletedJulianDetailed($MRCA,0,0,$HashOfGenomesObserved,$TreeCacheHash,$DomArch); # $MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$DomArch - calculate deltion rate over tree	
+		# $MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$DomArch - calculate deltion rate over tree	
 					
 		
 		@$SimulatedInterDeletionDistances = (@$SimulatedInterDeletionDistances,@$SingleSimInterDeletionDistances);
@@ -591,19 +590,14 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
     #Construct an interval tree for fast mapping of deletion events to the tree
     #Construct an interval tree (O(nlog(n)) time) so as to computepositions in clade most efficiently 
     
-    my $IntervalTree = Tree::Interval->new; 
-   
     my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
-    my $IntervalStartPoint = 0;
+    #Structure is prob => node_id
+    my @Points = keys(%$ProbabilityHash);
         
-    foreach my $IntervalEndPoint (sort(keys(%$ProbabilityHash))) {
-    	
-    	my $Node = $ProbabilityHash->{$IntervalEndPoint};
-    	        	
-    	$IntervalTree->insert($IntervalStartPoint,$IntervalEndPoint,$Node);
-    	$IntervalStartPoint=$IntervalEndPoint;
-    }
-
+    my $PointTree = Supfam::PointTree->new;
+    $PointTree->build(\@Points);
+  	#Create the PointTree
+   
 	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
 	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
 	
@@ -622,19 +616,25 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
 		@UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
 		
 		my @ModelCladeGenomes = @CladeGenomes;
-		my $TotalDeletedGenomes = [];
+
+		
+		my $TotalDeletedGenomesHash = {};
 		
 		#$DeletionsNumberDistribution->{$DeletionSimultation}++; #Turn on if you want to measure how often a value is sampled
 		
 		foreach my $DeletionPoint (@UniformDeletions) {
                 
-			my $DeletedBranch = $IntervalTree->find($DeletionPoint);#Find the node directly below the deletion
+			my $DeletionPoint = $PointTree->Search($DeletionPoint);#Find the node directly below the deletion
+			my $DeletedBranch = $ProbabilityHash->{$DeletionPoint};
+			#Search Tree for deletion point
 
 			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
-			my (undef,undef,undef,$NewDeletedGenomes) = IntUnDiff($TotalDeletedGenomes,$CurrentSimDeletedGenomes);
 			
-			push(@$TotalDeletedGenomes,@$NewDeletedGenomes);
+			@{$TotalDeletedGenomesHash}{@$CurrentSimDeletedGenomes} = (undef) x scalar(@$CurrentSimDeletedGenomes);
 		}
+		
+		my $TotalDeletedGenomes = [];
+		push(@$TotalDeletedGenomes,keys(%$TotalDeletedGenomesHash));
 		
 		## test to see if the simulation has resulted in an entire clade possessing a domain architecture and nothing else (i.e. which would make us find a new MRCA and a deletion rate of 0)
 		#OR that the simulation has ended with no domain archtectures present anywhere OR that they are present everywhere, in which case we would set the deletion rate as zero

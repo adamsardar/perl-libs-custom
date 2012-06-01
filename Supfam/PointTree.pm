@@ -125,16 +125,14 @@ sub build {
 	croak "You may only build a point tree once. Addition of intervals is not supported at this stage - add them all in one go.\n" if($self->LOCK);
 	
 	#Build the tree and place it into $self->TREE
-	$self->LOCK = 1;
-	$self->NPOINTS = scalar(@$Intervals);
 	
 	my $Tree = {};
 	enter_tree($Tree,$Intervals);
 	#Physically build a blanced binary tree of intervals.
 	
-	$self->TREE = $Tree;
-	$self->NPOINTS = scalar(@$Intervals);
-	$self->LOCK = 1;
+	$self->TREE($Tree);
+	$self->NPOINTS(scalar(@$Intervals));
+	$self->LOCK(1);
 	
 	return 1;
 }
@@ -149,6 +147,21 @@ sub enter_tree($$){
 	
 	my ($Tree,$PointsOnLevel) = @_;
 	# Tree is a hash form of the tree under construction, $PointsOnLevel is an array ref of [list of items on this level]
+	
+	if(scalar(@$PointsOnLevel) > 0){
+		
+#		print scalar(@$PointsOnLevel);
+#		print "  <- number of points\n";
+#		
+#		print join(' - ',@$PointsOnLevel);
+#		print "\n";
+		
+	}else{
+		
+		carp "No points on this level!\n";
+		
+	}
+	
 	
 	$Tree->{'PointsOnLevel'}= scalar(@$PointsOnLevel);
 	
@@ -170,13 +183,22 @@ sub enter_tree($$){
 					
 		#Set Divinding Point between two groups
 		my $Midpoint = ceil($Tree->{'PointsOnLevel'}/2);
-		$Tree->{'Dividing_Point'} = $SortedPoints[$Midpoint];
+		my $MidpointIndex = $Midpoint-1;
 		
+		$Tree->{'Dividing_Point'} = $SortedPoints[$MidpointIndex];
+		
+#		print $MidpointIndex."  <- Midpoint\n";
+#		print $Tree->{'PointsOnLevel'};
+#		print "  <- No Nodes on level\n";
+#		print $Tree->{'Dividing_Point'};
+#		print "  <- Divider\n";
+#		print "\n";
+				
 		#Collect Left Points of divider
-		@$LeftLineage=@SortedPoints[1 .. $Midpoint];
+		@$LeftLineage=@SortedPoints[0 .. $MidpointIndex];
 		
 		#Right Points of divider
-		@$RightLineage=@SortedPoints[$Midpoint+1 .. scalar(@SortedPoints)];
+		@$RightLineage=@SortedPoints[$MidpointIndex+1 .. scalar(@SortedPoints)-1];
 		
 		my ($LeftSubTree,$RightSubTree) = ({},{});
 		
@@ -207,17 +229,23 @@ sub Search {
     my $self = shift;
     my $PointToSearch = shift;
     
-    unless($self->LOCK && $self->TREE){
-    
-	    croak "You need to build a tree using the 'build' method first before you can search it!.\n" 
-    	#Check if TREE exists and that a LOCK is in place
-    }
+#    unless($self->LOCK && $self->TREE){
+#    
+#	    croak "You need to build a tree using the 'build' method first before you can search it!.\n" 
+#    	#Check if TREE exists and that a LOCK is in place
+#    }
+
+#Turning off a load of stuff because AUTOLOAD is so feckign slow in perl
 
     #Recursive search to look through tree and find point of interest
     
     my $Tree = $self->TREE;
+
+	my $IntervalPoint; #This will be the returned value. We propogate a pointer to this down through the levels of the following tree search
+
+	Point_Search_Recursively($Tree,$PointToSearch,\$IntervalPoint);
     
-	my $IntervalPoint = Point_Search_Recursively($Tree,$PointToSearch);
+    #print $IntervalPoint;
     
 	return($IntervalPoint);
 }
@@ -227,23 +255,23 @@ A sub called by the Search method. Please don't call manually. This will seek th
 along a given interval to discrete times (e.g. deletion events to nodes on a tree).
 =cut
 
-sub Point_Search_Recursively($$);
+sub Point_Search_Recursively($$$);
 
-sub Point_Search_Recursively($$){
+sub Point_Search_Recursively($$$){
    
-    my ($Tree,$Point) = @_;
-	
-	my $IntervalPoint;
+    my ($Tree,$Point,$IntervalPointPointer) = @_;
+	#We propagate $IntervalPointPointer down through the depth first search of the point tree. We then overwrite that memory location and then collapse back up the tree.
 	
 	if($Tree->{'PointsOnLevel'} == 1){
 		
-		$IntervalPoint = $Tree->{'Item'}; #Collect the point on this point
+		$$IntervalPointPointer = $Tree->{'Item'}; 
+		#Collect the point on this level and write to the memory location of $IntervalPointPointer
 		
 	}else{
 		
 		my $SubTreeToSearch;
 		
-		if($Point >= $Tree->{'Dividing_Point'}){
+		if($Point > $Tree->{'Dividing_Point'}){
 			
 			#Right Side
 			$SubTreeToSearch =$Tree->{'RightTree'};
@@ -254,10 +282,10 @@ sub Point_Search_Recursively($$){
 			$SubTreeToSearch =$Tree->{'LeftTree'};
 		}
 		
-		$IntervalPoint = Point_Search_Recursively($SubTreeToSearch,$Point);
+		Point_Search_Recursively($SubTreeToSearch,$Point,$IntervalPointPointer);
 	}
 	
-	return($IntervalPoint);
+	return(1);
 }
 
 
