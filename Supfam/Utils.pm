@@ -36,6 +36,8 @@ our @EXPORT    = qw(
 					CommaSepFile
 					KLdistance
 					fisher_yates_shuffle
+					calculate_ZScore
+					normalise_distribution
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -397,7 +399,38 @@ This is done so as to remain efficient with memory
 
 =cut
 
+sub calculate_ZScore($){
+     
+     my ($ValuesHash) = @_;
 
+	my $NumberValues = scalar(keys(%$ValuesHash));
+	
+	my $TotalSum = reduce{$a + $b}values(%$ValuesHash);
+	my $SampleMean = $TotalSum/$NumberValues;
+    my $TotalSumOfSquares = reduce{$a**2 + $b**2}values(%$ValuesHash);
+    my $SampleStDev = sqrt($TotalSumOfSquares/$NumberValues - $SampleMean**2);
+    
+    my $ZscoresHash = {};
+    
+    foreach my $Label (keys(%$ValuesHash)){
+    	
+    	my $datum = $ValuesHash->{$Label};
+    	my $zscore = ($datum-$SampleMean)/$SampleStDev;
+    	
+    	$ZscoresHash->{$Label} = $zscore;
+    }
+    
+     return($ZscoresHash);
+}
+
+=pod
+=item * calculate_ZScore
+
+Calculates the number of stadrad deviations each data point is from the mean (aka the z-score). This does not assume normaility of input distribution.
+
+The input is a hash ref of $HAsh->{DataLAbel} = value. Mean and StdDev will be estimated from the vlaues of this hash.
+
+=cut
 
 1;
 
