@@ -131,8 +131,6 @@ sub DeletedJulianDetailed($$$$$$){
     #InternalNodes will be a list of all nodes within the tree, grown in the loop below. Some initial values are thrown in here.
     my @GenomesWithTraits = keys(%{$HashOfGenomesObserved});
       
-    #  print Dumper($HashOfGenomesObserved);
-      
        map{if($HashOfGenomesObserved->{$_} > 1){print $DomArch."\n"; print $_."\n"; die '$HashOfGenomesObserved should have UNIQUE key value pairs. '.$_.' is non unique. There is a serious issue with the way that data is inputed into the hash'."\n";}}(keys(%{$HashOfGenomesObserved}));
        # Error check. Note that this sub requires that the two lists of genomes be unique (no internal repeats in the lists)!
 		
@@ -918,24 +916,22 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	
 	my @DistributionIndicies = sort{$a <=> $b}(keys(%$DistributionHash));
 	#Sort the indicies numerically
-
+	
+	#print "Single item: ".$SingleValue."\n";
+	#print join("\t",@DistributionIndicies);
+	
 	foreach my $item  (@DistributionIndicies){
 		
-		last if($item == $SingleValue);
-		
-		if (exists($DistributionHash->{$item})){
-			
-			$NumberOfSimulationsLT += $DistributionHash->{$item};
-		}
+		last if($item >= $SingleValue);
+		$NumberOfSimulationsLT += $DistributionHash->{$item};
    }
 	
 	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
 	my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
 	$NumberOfSimulationsLT += $DegeneracyContribution;
-	
 	#$NumberOfSimulationsLT += ($Degeneracy/2);
 
-	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
+	my $PosteriorQuantile = $NumberOfSimulationsLT/($NumberOfSimulations+1);
 	
 	$DistributionHash->{$SingleValue}--;
 	#Undo the modification to the distribution
