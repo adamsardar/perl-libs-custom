@@ -171,9 +171,9 @@ $SQLTreeCacheHash->{NodeID}{'node_id'}='Node name' as given in the input newick 
 $SQLTreeCacheHash->{NodeID}{'left_id'} = node left id
 $SQLTreeCacheHash->{NodeID}{'right_id'} = node right id
 
-$TreeCacheHash->{$node}{'Total_branch_lengths'}  - the total branch length of the clade beneath this node
-$TreeCacheHash->{$MRCA}{'Probability_Hash'}={ clade point => nodeID} - clade point is the point in the clade beneath the MRCA node which this node sits
-$TreeCacheHash->{$MRCA}{'node_id'}='Node name' as given in the SQL table
+$SQLTreeCacheHash->{$node}{'Total_branch_lengths'}  - the total branch length of the clade beneath this node
+$SQLTreeCacheHash->{$MRCA}{'Probability_Hash'}={ clade point => nodeID} - clade point is the point in the clade beneath the MRCA node which this node sits
+$SQLTreeCacheHash->{$MRCA}{'node_id'}='Node name' as given in the SQL table
 
 The Node Keys are the left ids of the tree, but it is more reliable to use the $SQLTreeCacheHash->{NodeID}{'left_id'} entry in case the keys of the hash have been mucked about with
 
