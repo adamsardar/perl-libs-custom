@@ -69,9 +69,9 @@ A wrapper function for the dumper module. Pass in the desired file name and a po
 =cut
 
 sub EasyUnDump($){
-	my ($FileName) = shift();
+	my ($FileName) = @_;
 	
-	open FH , "<".$FileName or die "Couldn't open $FileName: $!";
+	open FH , "<$FileName" or die "Couldn't open $FileName: $!";
 	my $FileDump;
 	
 		while (my $line = <FH>){
