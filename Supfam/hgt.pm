@@ -37,6 +37,7 @@ our @EXPORT    = qw(
 				RandomModelCorrPoisson
 				RandomModelCorrPoissonDeletionDetailed
 				RandomModelCorrPoissonOptimised
+				RandomModelCorrPoissonOptimisedDetailed
 				calculatePosteriorQuantile
 				calculateOldStylePosteriorQuantile
 				calculateJulianStylePosteriorQuantile
@@ -63,7 +64,11 @@ use Supfam::PointTree; #For use in the optimised CorrPoiss
 
 use Data::Dumper;
 
+use List::Util qw(sum);
+
 use Algorithm::Combinatorics qw(combinations);
+
+use Carp::Assert;
 
 sub DeletedJulian($$$$$$$){ 
 	#($subtree,0,0,$NodesObserved)
@@ -188,28 +193,16 @@ sub DeletedJulianDetailed($$$$$$){
 			  $ArrayRefA = [$DelPointA] if($TreeCacheHash->{$DelPointA}{'is_Leaf'} == 1);
 			  
 			  my $ArrayRefB = $TreeCacheHash->{$DelPointB}{'Clade_Leaves'};
-			  $ArrayRefB = [$DelPointB] if($TreeCacheHash->{$DelPointB}{'is_Leaf'} == 1);
+			  $ArrayRefB = [$DelPointB] if($TreeCacheHash->{$DelPointB}{'is_Leaf'} == 1);  
 			  
+			  my $UnionHash = {};
+			  map{$UnionHash->{$_}=undef}@$ArrayRefA;
+			  map{$UnionHash->{$_}=undef}@$ArrayRefB;
+			  #Use a hash to quickly find the union of all the genomes in the two lists.
 			  
-	#		  print $DelPointA."\n";
-	#		  print " => Del Point A\n";
-	#		  
-	#		  print join("\n",@$ArrayRefA);
-	#		  print "\nArray A\n";
-	#		  
-	#		  print $DelPointB."\n";
-	#		  print " => Del Point B\n";
-	#		  
-	#		  print join("\n",@$ArrayRefB);
-	#		  print "\nArray B\n";
-			  
-			  
-			  my ($Union,undef,undef,undef)=IntUnDiff($ArrayRefA,$ArrayRefB);
-			  #All the unique leaves beneath the two deletion points being studied
-			  
-			  next if(scalar(@$Union) == 1);
+			  my @Union = keys(%$UnionHash);
 			   
-			  my $MRCA = FindMRCA($TreeCacheHash,$treeroot,$Union);
+			  my $MRCA = FindMRCA($TreeCacheHash,$treeroot,\@Union);
 			  
 			 # print $MRCA."\n";
 			 # print " => MRCA\n";
@@ -224,7 +217,7 @@ sub DeletedJulianDetailed($$$$$$){
 			  #Add the distance from the nodes from MRCA to the sum
 			   
 			  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
-			  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointA}{'branch_length'}/2);
+			  $InterDeletionPoint -= ($TreeCacheHash->{$DelPointB}{'branch_length'}/2);
 				#subtract half the branch length between nodes and their direct ancestor. This is because we don't know exactly where on the branch this occured.
 			
 			  push(@$InterDeletionDistances,$InterDeletionPoint);
@@ -553,7 +546,7 @@ sub RandomModelCorrPoissonDeletionDetailed($$$$$) {
 		# $MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$DomArch - calculate deltion rate over tree	
 					
 		
-		@$SimulatedInterDeletionDistances = (@$SimulatedInterDeletionDistances,@$SingleSimInterDeletionDistances);
+		push(@$SimulatedInterDeletionDistances,@$SingleSimInterDeletionDistances);
 	}
 	
 	#For each simulation step, calculate the observed deletion rate over the tree and the simulation steps efeectove deletion rate. Push these onto a returned distribution. Then calculate the posterior quantiles
@@ -655,6 +648,121 @@ sub RandomModelCorrPoissonOptimised($$$$$) {
 		} #IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
 		# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
 		# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
+		
+		$distribution->{$no_model_genomes}++;
+		push(@$RawResults,$no_model_genomes);
+		#Update the distribution of the run accordingly and store results in rawresults
+	}
+	
+	my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+}
+
+=pod
+=item * RandomModelCorrPoissonOptimised
+A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
+we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
+
+Unlike RandomModelPoisson, however, this implementation ignores results that would produce 0 (i.e. and extinct architecture) or
+100% abndance (i.e. with a deletion rate of 0 and exluded from our models).
+
+This has been optimised to run as fast as I can make it. It uses interval trees and is careful with memory. Hope that it works!
+=cut
+
+sub RandomModelCorrPoissonOptimisedDetailed($$$$$) {
+	
+	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
+	
+	#$root is the root of the subtree or the most recent common ancestor
+
+    my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
+    push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
+       
+    my @Weights = map{$TreeCacheHash->{$_}{'branch_length'}}@CladeGenomes; 
+      
+    #Construct an interval tree for fast mapping of deletion events to the tree
+    #Construct an interval tree (O(nlog(n)) time) so as to computepositions in clade most efficiently 
+    
+    my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
+    #Structure is prob => node_id
+    my @Points = keys(%$ProbabilityHash);
+        
+    my $PointTree = Supfam::PointTree->new;
+    $PointTree->build(\@Points);
+  	#Create the PointTree
+   
+	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
+	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
+	
+	my @PoissonianDeletions = random_poisson($Iterations,$Expected_deletions); #Number of deletions in this iteration. This is drawn from a poissonian with mean equal to the number of deletions (the MLE)
+	
+	my $DeletionsNumberDistribution = {}; #This is a hash of the number of deletions modelled in the simualtion
+	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
+	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
+	
+	my @UniformDeletions;
+	
+	my $SimulatedInterDeletionDistances = [];
+	
+	while  (@PoissonianDeletions){ #For $Iterations number of times
+	
+		my $DeletionSimultation = shift(@PoissonianDeletions); #remove the first entry in array and set it as the number of deletions in this simulation
+		
+		@UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions ($DeletionSimultation), drawn from a poissonian above, uniformly distributed across the tree.
+		
+		my @ModelCladeGenomes = @CladeGenomes;
+
+		
+		my $TotalDeletedGenomesHash = {};
+		
+		#$DeletionsNumberDistribution->{$DeletionSimultation}++; #Turn on if you want to measure how often a value is sampled
+		
+		foreach my $DeletionPoint (@UniformDeletions) {
+                
+			my $DeletedBranch = $PointTree->Search($DeletionPoint);#Find the node directly below the deletion
+			#Search Tree for deletion point
+
+			my $CurrentSimDeletedGenomes = $TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}; #Array ref to the genomes beneath the current deletion point
+			
+			@{$TotalDeletedGenomesHash}{@$CurrentSimDeletedGenomes} = (undef) x scalar(@$CurrentSimDeletedGenomes);
+		}
+		
+		my $TotalDeletedGenomes = [];
+		push(@$TotalDeletedGenomes,keys(%$TotalDeletedGenomesHash));
+		
+		## test to see if the simulation has resulted in an entire clade possessing a domain architecture and nothing else (i.e. which would make us find a new MRCA and a deletion rate of 0)
+		#OR that the simulation has ended with no domain archtectures present anywhere OR that they are present everywhere, in which case we would set the deletion rate as zero
+	
+		my (undef,undef,undef,$ModelRemianingLeaves) = IntUnDiff($TotalDeletedGenomes,\@ModelCladeGenomes);;
+	
+		my $ModelFullCladeExclusive = 0; #Preallocate
+		my $no_model_genomes = scalar(@$ModelRemianingLeaves);
+		
+		my $ModelRoot;
+		
+		if($no_model_genomes > 0){
+
+			$ModelRoot = FindMRCA($TreeCacheHash,$root,$ModelRemianingLeaves);			
+			(undef,undef,$ModelFullCladeExclusive,undef) = IntUnDiff($TreeCacheHash->{$ModelRoot}{'Clade_Leaves'},$ModelRemianingLeaves)	; #		$ModelFullCladeExclusive will contain the members of the simulated clade beneath the simulated MRCA that aren't in the model genomes. If this is of size zero, then we should discount this result as it might incorporate bias 	
+		}
+		
+		if ($no_model_genomes == 0  || $no_model_genomes == scalar(@CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
+
+			push(@PoissonianDeletions,random_poisson(1,$Expected_deletions)); #push a number onto the end on the deletions array
+			next;
+		} #IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
+		# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
+		# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
+		
+		my $ModelCladeGenomesHash ={};
+		map{$ModelCladeGenomesHash->{$_}=1}@$ModelRemianingLeaves;
+		
+		my ($dels,$time,$SingleSimInterDeletionDistances) = DeletedJulianDetailed($ModelRoot,0,0,$ModelCladeGenomesHash,$TreeCacheHash,'Simulation of DA');
+		# $MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$DomArch - calculate deltion rate over tree	
+					
+		push(@$SimulatedInterDeletionDistances,@$SingleSimInterDeletionDistances);
+		
 		
 		$distribution->{$no_model_genomes}++;
 		push(@$RawResults,$no_model_genomes);
@@ -908,33 +1016,67 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 
 
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
+
+	$DistributionHash->{$SingleValue} ++;
+	
+	my $TestNumberOfSimulations = $NumberOfSimulations;
+	$NumberOfSimulations = sum(values(%$DistributionHash));
 		
-	$DistributionHash->{$SingleValue}++;
+	
 	#Stop a later step from kicking out because a there is no value in the distribution
 	
 	my $NumberOfSimulationsLT = 0;
+
 	
-	my @DistributionIndicies = sort{$a <=> $b}(keys(%$DistributionHash));
+	die "Different no. of sims" unless($NumberOfSimulations == $TestNumberOfSimulations+1);
+	
+	my @DistributionIndicies;
+	map{push(@DistributionIndicies,$_) if($_ < $SingleValue)}();
 	#Sort the indicies numerically
 	
 	#print "Single item: ".$SingleValue."\n";
 	#print join("\t",@DistributionIndicies);
 	
-	foreach my $item  (@DistributionIndicies){
-		
-		last if($item >= $SingleValue);
-		$NumberOfSimulationsLT += $DistributionHash->{$item};
-   }
+	my $storvalue = 'NotSet';
 	
-	my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
-	my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
-	$NumberOfSimulationsLT += $DegeneracyContribution;
+	foreach my $value (grep{$_ < $SingleValue}sort{$a <=> $b}(keys(%$DistributionHash))){
+		
+		#print $value." = ".$DistributionHash->{$value}." : ";
+		
+		$NumberOfSimulationsLT += $DistributionHash->{$value};
+		
+		#print $NumberOfSimulationsLT." - ";
+		
+		$storvalue = $value;
+	}
+	
+	my @KeysUnused = grep{$_ > $SingleValue}sort{$a <=> $b}(keys(%$DistributionHash));
+	
+	
+	#print "\n\n Keys Unused";
+	#print join(' - ',@KeysUnused);
+	#print " Keys Unused\n\n";
+
+	#print $NumberOfSimulationsLT." - Last - $storvalue - val - $SingleValue - single val\n ";
+	
+	#my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
+	#my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy-1);
+	
+	#print $DegeneracyContribution."  - Degen Contrib.\n";
+	
+#	$NumberOfSimulationsLT += $DegeneracyContribution;
 	#$NumberOfSimulationsLT += ($Degeneracy/2);
 
-	my $PosteriorQuantile = $NumberOfSimulationsLT/($NumberOfSimulations+1);
+
+	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
+	
+	#	print "\n Max Total: $NumberOfSimulations \n";
 	
 	$DistributionHash->{$SingleValue}--;
 	#Undo the modification to the distribution
+	
+	assert($PosteriorQuantile <= 1, 'Posterior quantile greater than 1!');
+	#die "Posterior Quantile > 1!! This shoudl never ever happen!  Post Quant: $PosteriorQuantile, Nsims = $NumberOfSimulations, NsimsLT = $NumberOfSimulationsLT" if ($PosteriorQuantile > 1);
 	
 	return($PosteriorQuantile);
 }
@@ -942,7 +1084,7 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 =pod * calculateContinuousPosteriorQuantile($SingleValue,$DistributionHash)
 
 Calculates where in the total area in a probability distribution a single value occurs. Returns a value between 0 and 1. These should be uniformly distributed, from the simple fact that sum(andy distribution)
-=1 and we are choosing a unifrom point from theis area.
+=1 and we are choosing a unifrom point from this area.
 
 This is an extension from calculatePosteriorQuantile, which is a finction for discrete probability distributions
 
@@ -1081,96 +1223,5 @@ One assumes that the inputed node has had the domain architecture observed in it
 be one, as it is the only possible way to explain the previously observed sighiting of the domain architecture.
 =cut
 
-sub run_HGT_Analysis_DA($$$$$$$$$$$$){
-		
-	my ($TreeCacheHash,$root,$DomCombGenomeHash,$TreeGenomesArrayRef,$FalseNegativeRate,$Iterations,$CachedResults,$model,$store,$DomArch,$RAWSIM_FH,$DELS_FH) = @_;		
-	
-	my @TreeGenomesNodeIDs = @$TreeGenomesArrayRef;
-	
-	my ($CladeGenomes,$NodesObserved);
-		
-		my $NodeName2NodeID = {};
-		map{$NodeName2NodeID->{$TreeCacheHash->{$_}{'node_id'}}= $_ }@TreeGenomesNodeIDs; #Generate a lookup table of leaf_name 2 node_id
-		
-		my $HashOfGenomesObserved = $DomCombGenomeHash->{$DomArch};
-		@$NodesObserved = keys(%$HashOfGenomesObserved);
-		
-		my @NodeIDsObserved = @{$NodeName2NodeID}{@$NodesObserved};#Hash slice to extract the node ids of the genomes observed
-		#Get the node IDs as the follwoing function doesn't work with the raw node tags
-
-		my $MRCA;
-		my $deletion_rate;
-		my ($dels, $time) = (0,0);
-		
-		unless(scalar(@$NodesObserved) == 1){
-			
-			$MRCA = FindMRCA($TreeCacheHash,$root,\@NodeIDsObserved);#($TreeCacheHash,$root,$LeavesArrayRef)
-
-			 if($model eq 'Julian' || $model eq 'poisson' || $model eq 'corrpoisson'){
-			 	
-					($dels, $time) = DeletedJulian($MRCA,0,0,$HashOfGenomesObserved,$TreeCacheHash,$root,$DomArch); # ($tree,$AncestorNodeID,$dels,$time,$GenomesOfDomArch) - calculate deltion rate over tree	
-					
-				}else{
-					die "Inappropriate model selected";
-				}
-				
-			$deletion_rate = $dels/$time;
-			
-		}else{
-			$deletion_rate = 0;	
-			$MRCA = $NodeIDsObserved[0] ; #Most Recent Common Ancestor
-		}
-				
-		@$CladeGenomes = @{$TreeCacheHash->{$MRCA}{'Clade_Leaves'}}; # Get all leaf genomes in this clade	
-		@$CladeGenomes = ($MRCA) if($TreeCacheHash->{$MRCA}{'is_Leaf'});
-				
-		print $DELS_FH "$DomArch:$deletion_rate:$dels\n" unless ($deletion_rate == 0);
-		#print "$DomArch:$deletion_rate\n";
-		
-		my ($selftest,$distribution,$RawResults,$DeletionsNumberDistribution);
-				
-		if($deletion_rate > 0){
-	
-			unless($CachedResults->{"$deletion_rate:@$CladeGenomes"} && $store){
-						
-				if($model eq 'Julian'){
-									
-					($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = RandomModelJulian($MRCA,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash);
-																					
-				}elsif($model eq 'poisson'){
-					
-					($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = RandomModelPoisson($MRCA,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash);
-
-				}elsif($model eq 'corrpoisson'){
-					
-					($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = RandomModelCorrPoisson($MRCA,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash);
-
-				}else{
-					die "No appropriate model selected";
-				}
-				
-			$CachedResults->{"$deletion_rate:@$CladeGenomes"} = [$selftest,$distribution,$RawResults,$DeletionsNumberDistribution];		
-			
-			}else{
-				($selftest,$distribution,$RawResults,$DeletionsNumberDistribution) = @{$CachedResults->{"$deletion_rate:@$CladeGenomes"}};
-			}
-			
-			my $RawSimData = join(',',@$RawResults);
-			print $RAWSIM_FH @$CladeGenomes.','.@$NodesObserved.':'.$DomArch.':'.$RawSimData."\n";
-			#Print simulation data out to file so as to allow for testing of convergence
-			
-		}else{
-			
-			($selftest,$distribution) = ('NULL',{});
-		}
-		
-		return($deletion_rate,$selftest,$distribution,$dels,$time,$NodesObserved,$CladeGenomes,$DeletionsNumberDistribution);
-}
-
-=pod * run_HGT_Analysis_DA
-
-A wrapper around the core hgt simultaion steps. This is to keep code more maintainable and to improve the readability of the orginal script.It's kinda ugly, but hugly here saves ugliness in the core script.
-
-=cut
 
 1;
