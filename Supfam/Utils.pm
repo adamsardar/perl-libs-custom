@@ -38,6 +38,7 @@ our @EXPORT    = qw(
 					fisher_yates_shuffle
 					calculate_ZScore
 					normalise_distribution
+					float_compare
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -431,6 +432,47 @@ Calculates the number of stadrad deviations each data point is from the mean (ak
 The input is a hash ref of $HAsh->{DataLAbel} = value. Mean and StdDev will be estimated from the vlaues of this hash.
 
 =cut
+
+
+sub float_compare($$$){
+     
+     my ($float1,$float2,$epsilon) = @_;
+	
+	my $difference = ($float1 - $float2);
+	
+	
+	if(abs($difference) <= $epsilon){
+		
+		return(0);
+		
+	}elsif($difference > 0){
+		
+		return(1);
+		
+	}elsif($difference < 0){
+		
+		return(-1);
+		
+	}else{
+		
+		die "Should never enter this part of the loop - something must be extremely wrong!\n";
+	}
+	
+}
+
+
+=pod
+=item * float_compare()
+
+Sub to compare two floats. It firsts tests for equality between two numbers (up to a precision of epsilon)
+and then tests to see if one float is larger than the other.
+
+returns 0 if they are equal (within epsilon)
+returns 1 if floatA is larger than B (outside epsilon)
+returns -1 if floatA is smaller than B (outside epsilon)
+
+=cut
+
 
 1;
 
