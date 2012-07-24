@@ -1014,56 +1014,31 @@ This is an extension from calculatePosteriorQuantile, which is a finction for di
 =cut
 
 sub calculateHashContinuousPosteriorQuantile($$$){
-
-
 	
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
 	
 	my $NumberOfSimulationsLT = 0;
-
-
-	#i.e. if the value is in the range of simulations
-
 	
 	my @DistIndiciesLessThan;
-	
 	map{push(@DistIndiciesLessThan,$_) if(dec_cmp($SingleValue,$_) == 1)}(keys(%$DistributionHash));
 	#Using dec_cmp to extract the decimal values. This prevents issues owing to 
 	
 	foreach my $value (@DistIndiciesLessThan){
 				
-		#print $value." = ".$DistributionHash->{$value}." : ";
-		
 		$NumberOfSimulationsLT += $DistributionHash->{$value};
-		
-		#print $NumberOfSimulationsLT." - ";
 	}
-		
-	#print "\n\n Keys Unused";
-	#print join(' - ',@KeysUnused);
-	#print " Keys Unused\n\n";
-
-	#print $NumberOfSimulationsLT." - Last - $storvalue - val - $SingleValue - single val\n ";
 	
 	if(exists($DistributionHash->{$SingleValue})){
 				
 		my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
 		my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
-		
-		#print "\n".$SingleValue." Single val \n";
-
-		#print $NumberOfSimulationsLT."\n";
-		#print $Degeneracy."  degeneracy \n";
-		#print $DegeneracyContribution." degeneracy contribution\n";
-		
+				
 		$NumberOfSimulationsLT += $DegeneracyContribution;
 		#$NumberOfSimulationsLT += ($Degeneracy/2);
 	}
 		
-
 	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
 
-	#assert($PosteriorQuantile <= 1, 'Posterior quantile greater than 1!');
 	die "Posterior Quantile > 1!! This shoudl never ever happen!  Post Quant: $PosteriorQuantile, Nsims = $NumberOfSimulations, NsimsLT = $NumberOfSimulationsLT" if ($PosteriorQuantile > 1);
 	
 	return($PosteriorQuantile);
