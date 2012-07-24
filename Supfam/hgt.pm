@@ -1017,15 +1017,44 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
 	
+	$DistributionHash->{$SingleValue}++;
+	
 	my $NumberOfSimulationsLT = 0;
 	
 	my @DistIndiciesLessThan;
 	
-	map{my $rounded = sprintf "%.20f", $_; print $_." <- Not a decimal sprintf format:".$rounded."\n" unless(is_dec_number($_))}(keys(%$DistributionHash));
+	my $RoundedSingleVar = sprintf "%.12f", $SingleValue;
+	
+	map{my $rounded = sprintf "%.12f", $_; print $_." <- Not a decimal sprintf format:".$rounded."\n" unless(is_dec_number($rounded))}(keys(%$DistributionHash));
 	#Helps with diagnosing errors
 	
-	map{push(@DistIndiciesLessThan,$_) if(dec_cmp($SingleValue,$_) == 1)}(keys(%$DistributionHash));
-	#Using dec_cmp to extract the decimal values. This prevents issues owing to 
+	my $flag =0;
+	#A flag to ensure that a value is never seen as being equal to the single value more than once
+	
+	foreach my $distval (keys(%$DistributionHash)){
+		
+		my $rounded = sprintf "%.12f", $distval;
+		
+		my $dec_compare =  dec_cmp($RoundedSingleVar,$rounded);
+		
+		push(@DistIndiciesLessThan,$distval) if($dec_compare == -1);
+		
+		if($dec_compare == 0){
+			
+			unless($flag){
+			
+				$flag=1;
+			}else{
+				
+				die "Two indicies in distribution are seen as being identical to the single_value. Try doing a float comparison to a greater level of precision (smaller epsilon)\n";
+			}	
+		}
+		
+		#Using dec_cmp to extract the decimal values. This prevents issues owing to floating point. Compare values to 10^-12 precision
+		#To ensure that the precision level isn't too coarse grained, there's an additional step that makes sure that the single_values (observed value) isn't seen more than once.
+	}
+	
+	
 	
 	foreach my $value (@DistIndiciesLessThan){
 				
@@ -1041,9 +1070,12 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 		#$NumberOfSimulationsLT += ($Degeneracy/2);
 	}
 		
-	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
+	my $PosteriorQuantile = $NumberOfSimulationsLT/($NumberOfSimulations+1);
+	#Add plus one to the number of simulations as we added a further 
 
 	die "Posterior Quantile > 1!! This shoudl never ever happen!  Post Quant: $PosteriorQuantile, Nsims = $NumberOfSimulations, NsimsLT = $NumberOfSimulationsLT" if ($PosteriorQuantile > 1);
+	
+	$DistributionHash->{$SingleValue}--;
 	
 	return($PosteriorQuantile);
 }
