@@ -65,6 +65,7 @@ use Supfam::PointTree; #For use in the optimised CorrPoiss
 use Data::Dumper;
 
 use List::Util qw(sum);
+use Math::Decimal qw(dec_cmp) ;
 
 use Algorithm::Combinatorics qw(combinations);
 
@@ -1015,68 +1016,55 @@ This is an extension from calculatePosteriorQuantile, which is a finction for di
 sub calculateHashContinuousPosteriorQuantile($$$){
 
 
+	
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
-
-	$DistributionHash->{$SingleValue} ++;
-	
-	my $TestNumberOfSimulations = $NumberOfSimulations;
-	$NumberOfSimulations = sum(values(%$DistributionHash));
-		
-	
-	#Stop a later step from kicking out because a there is no value in the distribution
 	
 	my $NumberOfSimulationsLT = 0;
 
+
+	#i.e. if the value is in the range of simulations
+
 	
-	die "Different no. of sims" unless($NumberOfSimulations == $TestNumberOfSimulations+1);
+	my @DistIndiciesLessThan;
 	
-	my @DistributionIndicies;
-	map{push(@DistributionIndicies,$_) if($_ < $SingleValue)}();
-	#Sort the indicies numerically
+	map{push(@DistIndiciesLessThan,$_) if(dec_cmp($SingleValue,$_) == 1)}(keys(%$DistributionHash));
+	#Using dec_cmp to extract the decimal values. This prevents issues owing to 
 	
-	#print "Single item: ".$SingleValue."\n";
-	#print join("\t",@DistributionIndicies);
-	
-	my $storvalue = 'NotSet';
-	
-	foreach my $value (grep{$_ < $SingleValue}sort{$a <=> $b}(keys(%$DistributionHash))){
-		
+	foreach my $value (@DistIndiciesLessThan){
+				
 		#print $value." = ".$DistributionHash->{$value}." : ";
 		
 		$NumberOfSimulationsLT += $DistributionHash->{$value};
 		
 		#print $NumberOfSimulationsLT." - ";
-		
-		$storvalue = $value;
 	}
-	
-	my @KeysUnused = grep{$_ > $SingleValue}sort{$a <=> $b}(keys(%$DistributionHash));
-	
-	
+		
 	#print "\n\n Keys Unused";
 	#print join(' - ',@KeysUnused);
 	#print " Keys Unused\n\n";
 
 	#print $NumberOfSimulationsLT." - Last - $storvalue - val - $SingleValue - single val\n ";
 	
-	#my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
-	#my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy-1);
-	
-	#print $DegeneracyContribution."  - Degen Contrib.\n";
-	
-#	$NumberOfSimulationsLT += $DegeneracyContribution;
-	#$NumberOfSimulationsLT += ($Degeneracy/2);
+	if(exists($DistributionHash->{$SingleValue})){
+				
+		my $Degeneracy = $DistributionHash->{$SingleValue};#Number of simulations of equal score. We place our point to sum up to uniform in this region
+		my ($DegeneracyContribution) = random_uniform(1,0,$Degeneracy);
+		
+		#print "\n".$SingleValue." Single val \n";
 
+		#print $NumberOfSimulationsLT."\n";
+		#print $Degeneracy."  degeneracy \n";
+		#print $DegeneracyContribution." degeneracy contribution\n";
+		
+		$NumberOfSimulationsLT += $DegeneracyContribution;
+		#$NumberOfSimulationsLT += ($Degeneracy/2);
+	}
+		
 
 	my $PosteriorQuantile = $NumberOfSimulationsLT/$NumberOfSimulations;
-	
-	#	print "\n Max Total: $NumberOfSimulations \n";
-	
-	$DistributionHash->{$SingleValue}--;
-	#Undo the modification to the distribution
-	
-	assert($PosteriorQuantile <= 1, 'Posterior quantile greater than 1!');
-	#die "Posterior Quantile > 1!! This shoudl never ever happen!  Post Quant: $PosteriorQuantile, Nsims = $NumberOfSimulations, NsimsLT = $NumberOfSimulationsLT" if ($PosteriorQuantile > 1);
+
+	#assert($PosteriorQuantile <= 1, 'Posterior quantile greater than 1!');
+	die "Posterior Quantile > 1!! This shoudl never ever happen!  Post Quant: $PosteriorQuantile, Nsims = $NumberOfSimulations, NsimsLT = $NumberOfSimulationsLT" if ($PosteriorQuantile > 1);
 	
 	return($PosteriorQuantile);
 }
