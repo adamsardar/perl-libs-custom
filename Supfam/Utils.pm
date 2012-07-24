@@ -432,5 +432,56 @@ The input is a hash ref of $HAsh->{DataLAbel} = value. Mean and StdDev will be e
 
 =cut
 
+
+
+
+sub isEqualFloat($$$)
+{
+	
+	my ($float1, $float2, $sig) = @_;
+
+	$_ = sprintf "%.${sig}g" foreach ($float1,$float2);
+	#$_ is an alias to list values after all
+ 
+  if($float1 eq $float2){
+ 
+  	return(1);
+  	
+  }else{
+ 
+  	return(0);
+  }
+  
+} 
+
+=pod
+
+Sub  : compareFloat
+Desc : to compare two floating point numbers. Returns 0 if equal, -1 if()
+Args : float1, float2, delta value(optinal) or 0.00001
+Returns : True if they are apart by the delta value, false otherwise
+
+=cut
+
+sub compareFloat($$$)
+{
+  my( $float1, $float2, $delta ) = @_;
+  $delta ||= 0.00001;  # default value of delta
+  abs( $float1 - $float2 ) < $delta
+} 
+
+=pod
+
+Sub  : isEqualFloat
+Desc : to compare two floating point numbers and find out if they are 
++equal
+Args : float1, float2, delta value(optinal) or 0.00001
+Returns : True if they are apart by the delta value, false otherwise
+
+=cut
+
+
+
+
 1;
 
