@@ -1021,7 +1021,7 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	
 	my @DistIndiciesLessThan;
 	
-	map{print $_." <- Not a decimal" unless(is_dec_number($_))}(keys(%$DistributionHash));
+	map{my $rounded = sprintf "%.20f", $_; print $_." <- Not a decimal sprintf format:".$rounded."\n" unless(is_dec_number($_))}(keys(%$DistributionHash));
 	#Helps with diagnosing errors
 	
 	map{push(@DistIndiciesLessThan,$_) if(dec_cmp($SingleValue,$_) == 1)}(keys(%$DistributionHash));
