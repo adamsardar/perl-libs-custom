@@ -65,7 +65,7 @@ use Supfam::PointTree; #For use in the optimised CorrPoiss
 use Data::Dumper;
 
 use List::Util qw(sum);
-use Math::Decimal qw(dec_cmp) ;
+use Math::Decimal qw(dec_cmp is_dec_number);
 
 use Algorithm::Combinatorics qw(combinations);
 
@@ -1020,6 +1020,10 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	my $NumberOfSimulationsLT = 0;
 	
 	my @DistIndiciesLessThan;
+	
+	map{print $_." <- Not a decimal" unless(is_dec_number($_))}(keys(%$DistributionHash));
+	#Helps with diagnosing errors
+	
 	map{push(@DistIndiciesLessThan,$_) if(dec_cmp($SingleValue,$_) == 1)}(keys(%$DistributionHash));
 	#Using dec_cmp to extract the decimal values. This prevents issues owing to 
 	
