@@ -39,6 +39,7 @@ our @EXPORT    = qw(
 					calculate_ZScore
 					normalise_distribution
 					float_compare
+					isEqualFloat
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -472,6 +473,36 @@ returns 1 if floatA is larger than B (outside epsilon)
 returns -1 if floatA is smaller than B (outside epsilon)
 
 =cut
+
+
+sub isEqualFloat($$$)
+{
+	
+	my ($float1, $float2, $sig) = @_;
+
+	$_ = sprintf "%.${sig}g" foreach ($float1,$float2);
+	#$_ is an alias to list values after all
+ 
+  if($float1 eq $float2){
+ 
+  	return(1);
+  	
+  }else{
+ 
+  	return(0);
+  }
+  
+} 
+
+=pod
+
+Sub  : isEqualFloat
+Desc : to compare two floating point numbers to a given significance. Returns 1 if equal, 0 if not. Works by converting the floats to strings (sprintf) and then does a string comparison
+Args : float1, float2, significance value(optinal) or 0.00001
+Returns : True if they are within sig value of each other, false otherwise
+
+=cut
+
 
 
 1;
