@@ -1018,16 +1018,14 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	my ($SingleValue,$DistributionHash,$NumberOfSimulations) = @_;
 	
 	$DistributionHash->{$SingleValue}++;
+	#Add the observed value ($SingleValue) to the distribution hash as a 'psuedo point'. This prevents errors kicking out because there is no point in the distribution which matches it.
 	
 	my $NumberOfSimulationsLT = 0;
 	
 	my @DistIndiciesLessThan;
 	
 	my $RoundedSingleVar = sprintf "%.12f", $SingleValue;
-	
-	map{my $rounded = sprintf "%.12f", $_; print $_." <- Not a decimal sprintf format:".$rounded."\n" unless(is_dec_number($rounded))}(keys(%$DistributionHash));
-	#Helps with diagnosing errors
-	
+
 	my $flag =0;
 	#A flag to ensure that a value is never seen as being equal to the single value more than once
 	
@@ -1035,6 +1033,9 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 		
 		my $rounded = sprintf "%.12f", $distval;
 		
+		
+		print $distval." <- Not a decimal sprintf format:".$rounded."\n" unless(is_dec_number($rounded));
+		#Helps with diagnosing errors
 		my $dec_compare =  dec_cmp($RoundedSingleVar,$rounded);
 		
 		push(@DistIndiciesLessThan,$distval) if($dec_compare == -1);
@@ -1044,6 +1045,7 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 			unless($flag){
 			
 				$flag=1;
+				
 			}else{
 				
 				die "Two indicies in distribution are seen as being identical to the single_value. Try doing a float comparison to a greater level of precision (smaller epsilon)\n";
@@ -1076,6 +1078,7 @@ sub calculateHashContinuousPosteriorQuantile($$$){
 	die "Posterior Quantile > 1!! This shoudl never ever happen!  Post Quant: $PosteriorQuantile, Nsims = $NumberOfSimulations, NsimsLT = $NumberOfSimulationsLT" if ($PosteriorQuantile > 1);
 	
 	$DistributionHash->{$SingleValue}--;
+	#Remove the previosly added psuedo value.
 	
 	return($PosteriorQuantile);
 }
