@@ -156,7 +156,7 @@ sub RAxMLAncestralMarginalProbabilities_FileParser{
 				die "Script only handles binary state reconstruction at line $." if(scalar(@MultiStateProbablities) != 2);	
 				#Change the states to shorter ints (6d.p.)
 								
-				map{unless($_ =~ m/(0|1)\.\d{6}/){ die "Expecting marginal probabilities to be of the for 0.123456 with six digits agter dp! Got $_ \n"}}@MultiStateProbablities;
+				map{unless($_ =~ m/(0|1)\.\d{6}/){ die "Expecting marginal probabilities to be of the for 0.123456 with six digits agter dp! Got $_\n"}}@MultiStateProbablities;
 				#Expected 8 carachters per probability
 				
 				#push onto states
