@@ -44,6 +44,7 @@ our @EXPORT    = qw(
 				calculateHashContinuousPosteriorQuantile
 				calculateContinuousPosteriorQuantile
 				RandomModelPoissonOptimised
+				HGTshuffle
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -56,7 +57,7 @@ use warnings;
 use Time::HiRes;
 use POSIX qw(floor ceil);
 
-use Math::Random qw(random_poisson random_uniform random_uniform_integer);
+use Math::Random qw(random_poisson random_uniform random_uniform_integer random_exponential);
 
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
@@ -242,16 +243,15 @@ this is a more vebose version of  DeletedJulian. It calculates where all deletio
 =cut
 
 
-sub RandomModelPoisson($$$$$) {
+sub RandomModelPoisson($$$$$$$) {
 	
-	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
+	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash,$HGTpercentage,$corrflag) = @_;
 	
 	#$root is the root of the subtree or the most recent common ancestor
 
     my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
     push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
-    my %CladeGenomesHash;
-    map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
+    my %CladeGenomesHash; map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
            
 	my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
 	my @ProbabilityIntervals = sort(keys(%$ProbabilityHash));
@@ -266,6 +266,10 @@ sub RandomModelPoisson($$$$$) {
 	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
 	
 	my $UniformDeletions = [];
+	
+	my $SingleSimGenomeHash = {};
+	my @HGTUniformSimsPool = random_uniform($Iterations,0,1);
+	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
 	foreach my $DeletionSimultation (@PoissonianDeletions){ #For $Iterations
 		
@@ -285,11 +289,51 @@ sub RandomModelPoisson($$$$$) {
 			delete($ModelCladeGenomesHash{$DeletedNode}) if ($TreeCacheHash->{$DeletedNode}{'is_Leaf'});		
 		}
 		
-		my $no_model_genomes = scalar(keys(%ModelCladeGenomesHash));
+		if(pop(@HGTUniformSimsPool) < $HGTpercentage){
+			#Random assignment of dom arches to genomes
+			
+			my @GenomesWithDAByHGT = @{HGTshuffle(\@CladeGenomes,'Power')};
+			#At current we only allow for the current model to be used.
+			
+			if(scalar(@GenomesWithDAByHGT) > 0){
+				map{$ModelCladeGenomesHash{$_} =1;}@GenomesWithDAByHGT;
+				#Add a chunk of domain architectures into the clade genomes list
+			}
+			
+		}
+			
+		my @ModelRemianingLeaves = keys(%ModelCladeGenomesHash);
+		my $ModelFullCladeExclusive = 0;
+		
+		my $no_model_genomes = scalar(@ModelRemianingLeaves);
+		
+		if($corrflag){	
+			if($no_model_genomes > 0){
+	
+				my $ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
+				my @ModelFullCladeLeaves = @{$TreeCacheHash->{$ModelRoot}{'Clade_Leaves'}};
+							
+				(undef,undef,$ModelFullCladeExclusive,undef) = IntUnDiff(\@ModelFullCladeLeaves,\@ModelRemianingLeaves)	; #		$ModelFullCladeExclusive will contain the members of the simulated clade beneath the simulated MRCA that aren't in the model genomes. If this is of size zero, then we should discount this result as it might incorporate bias 	
+			}
+			
+			if ($no_model_genomes == 0  || $no_model_genomes == scalar(@CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
+	
+				push(@PoissonianDeletions,random_poisson(1,$Expected_deletions)); #push a number onto the end on the deletions array
+				next;
+			} #IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
+			# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
+			# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
+		}
 		
 		$distribution->{$no_model_genomes}++;
 		push(@$RawResults,$no_model_genomes);
 		#Update the distribution of the run accordingly and store results in rawresults
+	
+		if ($Iterations == 1){
+			
+			%$SingleSimGenomeHash = %ModelCladeGenomesHash;
+		}
+
 	}
 	
 	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
@@ -297,13 +341,73 @@ sub RandomModelPoisson($$$$$) {
 	#my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
 	#my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
 	
-	return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+	unless($Iterations == 1){
+		
+		return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+		
+	}else{
+		
+		return($SingleSimGenomeHash);
+	#Allows for a single simulation of the model to be performed and dumped out
+	}
 }
 
 =pod
 =item * RandomModelPoisson
 A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
 we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
+=cut
+
+sub HGTshuffle($$){
+	
+	my ($CladeGenomes,$delmodel) = @_;
+										
+			my $ShuffledCladeGenomes = [];
+			@$ShuffledCladeGenomes = @{$CladeGenomes};
+			
+			my $RandomCladeInt;
+			
+			if($delmodel eq 'Uniform'){
+				#Single unifrom number 'N' between 1 and size_of_clade.
+				$RandomCladeInt = random_uniform_integer(1,0,scalar(@$ShuffledCladeGenomes)-1);
+				
+			}elsif($delmodel eq 'Power'){
+				
+				my $UnifromVal = random_uniform(1,0,scalar(@$ShuffledCladeGenomes)-1);
+				
+				while($RandomCladeInt ~~ undef || $RandomCladeInt > (scalar(@$ShuffledCladeGenomes)-1) || $RandomCladeInt < 0){
+					
+					$RandomCladeInt = int(exp((log($UnifromVal)-log(1.089))/2.089));
+					#Convert a uniform value to a power law distributed value
+					#12.29 is the average number of genomes that a dom arch belongs to in eukaryotes. Think of it as an empirical fudge factor
+				}
+				
+				
+			}elsif($delmodel eq 'Geometric'){
+				
+				#Single unifrom number 'N' between 1 and size_of_clade.
+				while($RandomCladeInt ~~ undef || $RandomCladeInt > (scalar(@$ShuffledCladeGenomes)-1)){
+					
+					$RandomCladeInt = int(random_exponential(1,'12.29'));
+					#12.29 is the average number of genomes that a dom arch belongs to in eukaryotes.
+				}
+			}
+			
+			#Shuffle the genomes, then choose the first 'N' terms.
+			fisher_yates_shuffle($ShuffledCladeGenomes);
+			
+			my $HGTPossesions = [];
+			push(@$HGTPossesions,@$ShuffledCladeGenomes[0 .. $RandomCladeInt]);
+			#i.e. genomes that posses a DA as a consequence of HGT
+			
+	return($HGTPossesions);
+}
+
+=pod
+=item * HGTshuffle
+A very simple little model of HGT. A domain architecture can belong to one or more members of a list of genomes. This number is set to be equal to the number drawn from
+a distribution of choice. N.B these distributions are parameterised by values drawn from Eukaryotes. Perhaps these will become options that you can set in future,
+
 =cut
 
 sub RandomModelPoissonOptimised($$$$$) {
@@ -892,7 +996,7 @@ sub RandomModelJulian($$$$$) {
 
 sub RandomModelJulianOpt($$$$$) {
 	
-	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash) = @_;
+	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash,$HGTpercentage) = @_;
 
 	#$root is the root of the subtree or the most recent common ancestor
 
@@ -900,7 +1004,7 @@ sub RandomModelJulianOpt($$$$$) {
     push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
     my %CladeGenomesHash;
     map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
-           
+          
 	my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
 	my @ProbabilityIntervals = sort(keys(%$ProbabilityHash));
 	

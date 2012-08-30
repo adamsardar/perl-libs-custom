@@ -53,7 +53,7 @@ use Data::Dumper;
 use Term::ProgressBar;
 use Math::Combinatorics;
 use Supfam::SQLFunc;
-use Carp qw(croak);
+use Carp;
 use Params::Validate qw(:all);
 use List::Util qw(reduce);
 
@@ -104,7 +104,7 @@ sub IntUnDiff($$){
 	my $ListALookup={};
 	my $ListBLookup={};
 	
-	map{die if $_ ~~ undef}(@$ListA,@$ListB);
+	map{croak if $_ ~~ undef}(@$ListA,@$ListB);
 	
 	map{$ListALookup->{$_} = 1}@$ListA;
 	map{$ListBLookup->{$_} = 1}@$ListB;
@@ -126,7 +126,7 @@ sub IntUnDiff($$){
 	 	 	}elsif(exists($ListBLookup->{$element})){
 	 	 		push(@$ListBExclusive, $element); 
 	 	 	}else{
-	 	 		die "Error in code!\n";
+	 	 		croak "Error in code!\n";
 	 	 	}
 	 	 }
 	 }
