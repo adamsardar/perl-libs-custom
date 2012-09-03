@@ -319,6 +319,7 @@ sub RandomModelPoisson($$$$$$$) {
 			if ($no_model_genomes == 0  || $no_model_genomes == scalar(@CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
 	
 				push(@PoissonianDeletions,random_poisson(1,$Expected_deletions)); #push a number onto the end on the deletions array
+				push(@HGTUniformSimsPool,random_uniform(1,0,1)); #push a number onto the end on the uniform pool array
 				next;
 			} #IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
 			# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
