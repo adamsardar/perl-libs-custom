@@ -306,6 +306,10 @@ $root - the hash key of the root (remeber that the keys are the clades in newick
 
 $TreeCacheHash - as above
 
+
+NOTE:At current these tools don't allow for parsing bootsrap values form an input tree.
+TODO Add bootstrap support value parsing
+
 =cut
 
 
