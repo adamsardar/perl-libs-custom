@@ -374,13 +374,15 @@ sub HGTshuffle($$){
 				
 			}elsif($delmodel eq 'Power'){
 				
-				my $UnifromVal = random_uniform(1,0,scalar(@$ShuffledCladeGenomes)-1);
 				
 				while($RandomCladeInt ~~ undef || $RandomCladeInt > (scalar(@$ShuffledCladeGenomes)-1) || $RandomCladeInt < 0){
+
+					$RandomCladeInt = int(exp(-log(1-random_uniform(1,0,1))/1.25));
 					
-					$RandomCladeInt = int(exp((log($UnifromVal)-log(1.089))/2.089));
-					#Convert a uniform value to a power law distributed value
-					#12.29 is the average number of genomes that a dom arch belongs to in eukaryotes. Think of it as an empirical fudge factor
+					#Alpha = 1.25 - paraemter of power law, results in an average of 5
+					
+					#Convert a uniform value to a power law distributed value by inverse transform sampling -> take a uniform random number and ask where it falls within the CDF of the power law
+					#alpha = 1.25 was found through least squares regression with R> 0.95 in both eukaryotes and bacteria. p-value < 0.001
 				}
 				
 				
