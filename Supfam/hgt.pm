@@ -33,6 +33,7 @@ our @EXPORT    = qw(
 				DeletedJulian
 				DeletedJulianDetailed
 				DeletedPoisson
+				HGTTreeDeletionModel
 				RandomModelPoisson
 				RandomModelCorrPoisson
 				RandomModelCorrPoissonDeletionDetailed
@@ -57,7 +58,7 @@ use warnings;
 use Time::HiRes;
 use POSIX qw(floor ceil);
 
-use Math::Random qw(random_poisson random_uniform random_uniform_integer random_exponential);
+use Math::Random qw(random_poisson random_uniform random_uniform_integer random_exponential random_negative_binomial);
 
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
@@ -70,7 +71,7 @@ use Math::Decimal qw(dec_cmp is_dec_number);
 
 use Algorithm::Combinatorics qw(combinations);
 
-use Carp::Assert;
+use Carp;
 
 sub DeletedJulian($$$$$$$){ 
 	#($subtree,0,0,$NodesObserved)
@@ -243,6 +244,153 @@ this is a more vebose version of  DeletedJulian. It calculates where all deletio
 =cut
 
 
+sub HGTTreeDeletionModel($$$$$$$) {
+	
+	my ($root,$model,$Iterations,$ndelsobs,$timedelsobserved,$TreeCacheHash,$HGTpercentage) = @_;
+	#$root is the root of the subtree or the most recent common ancestor
+
+	my $corrflag = ($model =~ m/corr/i)?1:0;
+	
+    my @CladeGenomes = @{$TreeCacheHash->{$root}{'Clade_Leaves'}};
+    push(@CladeGenomes,$root) if ($TreeCacheHash->{$root}{'is_Leaf'});
+    my %CladeGenomesHash; map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
+           
+	my $ProbabilityHash = $TreeCacheHash->{$root}{'Probability_Hash'};
+	my @ProbabilityIntervals = sort(keys(%$ProbabilityHash));
+	
+	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
+	
+	my $deletion_rate = $ndelsobs/$timedelsobserved;
+	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
+	#This is the average number of deletions expected at a given deletion rate. This is the single paramentr of input into a poisson model
+	
+	####
+	
+	my @NumberOfDeletions;
+	
+	if($model =~ m/poisson/i){
+		
+		@NumberOfDeletions = random_poisson($Iterations,$Expected_deletions);
+		#Number of deletions in this iteration. This is drawn from a poissonian with mean equal to the number of deletions (the MLE for the exponential formulation of the poisson process)
+				
+	}elsif($model =~ m/negbin/i){
+		
+		@NumberOfDeletions = random_negative_binomial($Iterations, $ndelsobs, $TotalBranchLength/($TotalBranchLength + $timedelsobserved));
+		#Number of deletions in this iteration. This is drawn from a negative binomial distribution with parameters determined so as to ensure that the formulation as a gamma-poisson mixture continues.
+	}
+	#####
+	
+	
+	my $DeletionsNumberDistribution = {}; #This is a hash of the number of deletions modelled in the simualtion
+	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
+	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
+	
+	my $UniformDeletions = [];
+	
+	my $SingleSimGenomeHash = {};
+	my @HGTUniformSimsPool = random_uniform($Iterations,0,1);
+	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
+	
+	foreach my $DeletionSimultation (@NumberOfDeletions){ #For $Iterations
+		
+		@$UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions, drawn from a poissonian above, uniformly distributed across the tree.
+		my %ModelCladeGenomesHash = %CladeGenomesHash;
+		#$DeletionsNumberDistribution->{$DeletionSimultation}++;
+		
+		foreach my $DeletionPoint (@$UniformDeletions) {
+                    
+			my $index = 0; 
+			while ($DeletionPoint > $ProbabilityIntervals[$index]){$index++;}
+			# @ProbabilityIntervals is a precalculated hash of all the nodes in the sub-tree from the MRCA ($root) and where they sit in a stretched out sum of all branch lengths. $DeletedNode is a uniform random point along this line.
+			#The above while loop is used to find the suitable point at which 
+			my $DeletedNode = $ProbabilityHash->{$ProbabilityIntervals[$index]};
+			
+			map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedNode}{'Clade_Leaves'}};
+			delete($ModelCladeGenomesHash{$DeletedNode}) if ($TreeCacheHash->{$DeletedNode}{'is_Leaf'});		
+		}
+		
+		if(pop(@HGTUniformSimsPool) < $HGTpercentage){
+			#Random assignment of dom arches to genomes
+			
+			my @GenomesWithDAByHGT = @{HGTshuffle(\@CladeGenomes,'Power')};
+			#At current we only allow for the current model to be used.
+			
+			if(scalar(@GenomesWithDAByHGT) > 0){
+				map{$ModelCladeGenomesHash{$_} =1;}@GenomesWithDAByHGT;
+				#Add a chunk of domain architectures into the clade genomes list
+			}
+			
+		}
+			
+		my @ModelRemianingLeaves = keys(%ModelCladeGenomesHash);
+		my $ModelFullCladeExclusive = 0;
+		
+		my $no_model_genomes = scalar(@ModelRemianingLeaves);
+		
+		if($corrflag){
+			
+			if($no_model_genomes > 0){
+	
+				my $ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
+				my @ModelFullCladeLeaves = @{$TreeCacheHash->{$ModelRoot}{'Clade_Leaves'}};
+							
+				(undef,undef,$ModelFullCladeExclusive,undef) = IntUnDiff(\@ModelFullCladeLeaves,\@ModelRemianingLeaves)	; #		$ModelFullCladeExclusive will contain the members of the simulated clade beneath the simulated MRCA that aren't in the model genomes. If this is of size zero, then we should discount this result as it might incorporate bias 	
+			}
+			
+			if ($no_model_genomes == 0  || $no_model_genomes == scalar(@CladeGenomes) || scalar(@$ModelFullCladeExclusive) == 0){
+	
+				if($model =~ m/poisson/i){
+					
+					@NumberOfDeletions = random_poisson($Iterations,$Expected_deletions);		
+				}elsif($model =~ m/negbin/i){
+					
+					@NumberOfDeletions = random_negative_binomial($Iterations, $ndelsobs, $TotalBranchLength/($TotalBranchLength + $timedelsobserved));
+		
+				}#push a number onto the end on the deletions array
+				
+				push(@HGTUniformSimsPool,random_uniform(1,0,1)); #push a number onto the end on the uniform pool array
+				next;
+			} 
+			
+			#IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
+			# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
+			# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
+		}
+		
+		$distribution->{$no_model_genomes}++;
+		push(@$RawResults,$no_model_genomes);
+		#Update the distribution of the run accordingly and store results in rawresults
+	
+		if ($Iterations == 1){
+			
+			%$SingleSimGenomeHash = %ModelCladeGenomesHash;
+		}
+
+	}
+	
+	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
+	
+	#my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
+	#my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
+	
+	unless($Iterations == 1){
+		
+		return($SelftestValue,$distribution,$RawResults,$DeletionsNumberDistribution);
+		
+	}else{
+		
+		return($SingleSimGenomeHash);
+	#Allows for a single simulation of the model to be performed and dumped out
+	}
+}
+
+=pod
+=item * RandomModelPoisson
+A deletion model based on the poisson distribution of deletion events. Using the number of deletions in the entire clade to parameterise the distribution (as obtainined using DeletedJulian),
+we draw $itr intergers from the distribution and then scatter then, for each of those numbers, scatter N deletion events over the tree, where N is the poisson number.
+=cut
+
+
 sub RandomModelPoisson($$$$$$$) {
 	
 	my ($root,$FalseNegativeRate,$Iterations,$deletion_rate,$TreeCacheHash,$HGTpercentage,$corrflag) = @_;
@@ -307,7 +455,8 @@ sub RandomModelPoisson($$$$$$$) {
 		
 		my $no_model_genomes = scalar(@ModelRemianingLeaves);
 		
-		if($corrflag){	
+		if($corrflag){
+			
 			if($no_model_genomes > 0){
 	
 				my $ModelRoot = FindMRCA($TreeCacheHash,$root,\@ModelRemianingLeaves);
@@ -321,7 +470,9 @@ sub RandomModelPoisson($$$$$$$) {
 				push(@PoissonianDeletions,random_poisson(1,$Expected_deletions)); #push a number onto the end on the deletions array
 				push(@HGTUniformSimsPool,random_uniform(1,0,1)); #push a number onto the end on the uniform pool array
 				next;
-			} #IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
+			} 
+			
+			#IFF the simulation has ended with no genomes possesing the architecture (extinction) or with complete ubiquity in the clade under study,
 			# or we have ubiquity in the clade beneath the MRCA of the simulated genomes
 			# we discard the result (these three conditions would mean that we wouldn't be studying the domain architecture, leading to bias)
 		}
