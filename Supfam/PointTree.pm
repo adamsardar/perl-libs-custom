@@ -9,7 +9,7 @@ use warnings;
 
 =head1 NAME
 
- Supfam::PointTree
+Supfam::PointTree
 
 =head1 DESCRIPTION
 
@@ -141,10 +141,11 @@ sub build {
 A sub-routine called by the build method so as to actually construct a tree representation of the intervals. Please do not call call directl (it is not exported by this package and is not a method).
 Works through a depth-first recursion.
 =cut
-sub enter_tree($$);
 
-sub enter_tree($$){
+sub enter_tree{
 	
+	carp "This sub takes 2 arguments exactly\n" unless(scalar(@_) == 2);
+
 	my ($Tree,$PointsOnLevel) = @_;
 	# Tree is a hash form of the tree under construction, $PointsOnLevel is an array ref of [list of items on this level]
 	
@@ -227,7 +228,11 @@ Given a single point, this function will find
 sub Search {
    
     my $self = shift;
-    my $PointToSearch = shift;
+    my $PointsToSearch = shift;
+    
+    
+    carp "This method takes a single pointer to an array as function input. Recieved a ".ref($PointsToSearch)."\n" unless (ref($PointsToSearch) eq 'ARRAY');
+    
     
 #    unless($self->LOCK && $self->TREE){
 #    
@@ -240,14 +245,20 @@ sub Search {
     #Recursive search to look through tree and find point of interest
     
     my $Tree = $self->TREE;
+	
+	my $IntervalPoints = [];
+	
+	while(my $PointToSearch = pop(@$PointsToSearch)){
 
-	my $IntervalPoint; #This will be the returned value. We propogate a pointer to this down through the levels of the following tree search
-
-	Point_Search_Recursively($Tree,$PointToSearch,\$IntervalPoint);
+		my $IntervalPoint; #This will be the returned value. We propogate a pointer to this down through the levels of the following tree search
+	
+		Point_Search_Iteratively($Tree,$PointToSearch,\$IntervalPoint);
+	    
+	    #print $IntervalPoint;
+	 	push(@$IntervalPoints,$IntervalPoint);
+	}
     
-    #print $IntervalPoint;
-    
-	return($IntervalPoint);
+	return($IntervalPoints);
 }
 
 =item * Point_Search_Recursively
@@ -255,9 +266,9 @@ A sub called by the Search method. Please don't call manually. This will seek th
 along a given interval to discrete times (e.g. deletion events to nodes on a tree).
 =cut
 
-sub Point_Search_Recursively($$$);
-
-sub Point_Search_Recursively($$$){
+sub Point_Search_Recursively{
+   
+   carp "This sub takes 3 arguments exactly\n" unless(scalar(@_) == 3);
    
     my ($Tree,$Point,$IntervalPointPointer) = @_;
 	#We propagate $IntervalPointPointer down through the depth first search of the point tree. We then overwrite that memory location and then collapse back up the tree.
@@ -284,8 +295,36 @@ sub Point_Search_Recursively($$$){
 		
 		Point_Search_Recursively($SubTreeToSearch,$Point,$IntervalPointPointer);
 	}
+}
+
+
+=item * Point_Search_Iteratively
+A sub called by the Search method. Please don't call manually. This will seek the interval/divider immediitaly above the point given - this is useful for mapping, say, continuous points
+along a given interval to discrete times (e.g. deletion events to nodes on a tree).
+=cut
+
+sub Point_Search_Iteratively{
+   
+   carp "This sub takes 3 arguments exactly\n" unless(scalar(@_) == 3);
+   
+    my ($Tree,$Point,$IntervalPointPointer) = @_;
+	#We propagate $IntervalPointPointer down through the depth first search of the point tree. We then overwrite that memory location and then collapse back up the tree.
 	
-	return(1);
+	while($Tree->{'PointsOnLevel'} != 1){
+		
+		if($Point > $Tree->{'Dividing_Point'}){
+			
+			#Right Side
+			$Tree =$Tree->{'RightTree'};
+			
+		}else{
+			
+			#Left Side
+			$Tree =$Tree->{'LeftTree'};
+		}
+	}
+	
+	$$IntervalPointPointer = $Tree->{'Item'}; 
 }
 
 
