@@ -42,6 +42,7 @@ our @EXPORT    = qw(
 				calculateContinuousPosteriorQuantile
 				RandomModelPoissonOptimised
 				HGTshuffle
+				DeletedSimAnneal
                   );
 our @EXPORT_OK = qw();
 our $VERSION   = 1.00;
@@ -54,7 +55,7 @@ use warnings;
 use Time::HiRes;
 use POSIX qw(floor ceil);
 
-use Math::Random qw(random_poisson random_uniform random_uniform_integer random_exponential random_negative_binomial);
+use Math::Random qw(random_poisson random_uniform random_uniform_integer random_exponential random_negative_binomial random_gamma);
 
 use Supfam::TreeFuncsNonBP;
 use Supfam::Utils;
@@ -240,6 +241,106 @@ this is a more vebose version of  DeletedJulian. It calculates where all deletio
 =cut
 
 
+sub DeletedSimAnneal{ 
+
+	my ($MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$treeroot,$DomArch,$CladeSize,$opt_iterations,$HGTpercentage,$model,$NoGenomesObserved) = @_;
+	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
+	
+
+#s ← s0; e ← E(s)                                  // Initial state, energy.
+#sbest ← s; ebest ← e                              // Initial "best" solution
+#k ← 0                                             // Energy evaluation count.
+
+my $lambda_original = $dels/$time;
+my $lamba_best = $lambda_original;
+
+my (undef,$predistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,100,[$lamba_best],$TreeCacheHash,$HGTpercentage/100);				
+my $BestLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$predistribution,101,$CladeSize);
+
+my $OriginalEnergy = $BestLambda_Energy;
+
+$opt_iterations = 100;
+
+#print $BestLambda_Energy;
+
+my $count = 1;
+my ($gamma_alpha,$gamma_beta) = ($dels,$time);
+
+	
+	while($count < $opt_iterations){
+		
+	
+		my $Temperature = $opt_iterations/$count -1; #This approaches 0, steeply at first and then slows out. Diff is 1/count^2
+		
+		my $lambda_new = random_gamma(1,$gamma_beta,$gamma_alpha);
+		#Choose a new value for lambda from the vaccinity of the current best values
+
+		my (undef,$simdistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,100,[$lambda_new],$TreeCacheHash,0);				
+		my $NewLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$simdistribution,101,$CladeSize);
+		#Self test treats a randomly chosen simulation as though it were a true result. We therefore reduce the distribution count at that point by one, as we are picking it out. This is a sanity check.
+					
+		if(random_uniform() <= exp(($NewLambda_Energy - $BestLambda_Energy)/$Temperature)){
+			
+			#Move vacinity - perform a single simulation at our new lambda rate and then measure the number of deletions.
+			my $SingleCombGenomeSimHash = HGTTreeDeletionModelOptimised($MRCA,$model,1,[$lambda_new],$TreeCacheHash,0);
+			my $SingleSimDomCombGenomeHash = {};
+			map{$SingleSimDomCombGenomeHash->{'Comb'}{$TreeCacheHash->{$_}{'node_id'}}=1}(keys(%$SingleCombGenomeSimHash));
+			
+			($gamma_alpha, $gamma_beta) = DeletedJulian($MRCA,0,0,$SingleSimDomCombGenomeHash,$TreeCacheHash,$treeroot,'Comb'); # ($tree,$AncestorNodeID,$dels,$time,$GenomesOfDomArch) - calculate deltion rate over tree
+		}
+		
+		
+		if($NewLambda_Energy > $BestLambda_Energy){
+			
+			$lamba_best = $lambda_new;
+			$BestLambda_Energy = $NewLambda_Energy;
+		}
+		
+		$count++;
+	}
+
+my ($selftest,$distribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,1000,[$lamba_best],$TreeCacheHash,0);	
+
+$distribution->{$selftest}--;
+my $selftestval = calculatePosteriorQuantile($NoGenomesObserved,$distribution,1001,$CladeSize);
+
+return($lamba_best, $lambda_original,$BestLambda_Energy,$OriginalEnergy,$selftestval);
+
+#while k < kmax and e > emax                       // While time left & not good enough:
+#  T ← temperature(k/kmax)                         // Temperature calculation.
+
+#  snew ← neighbour(s)                             // Pick some neighbour.
+#Choose neighbour from a gamma
+
+#  enew ← E(snew)                                 // Compute its energy.
+
+
+#  if P(e, enew, T) > random() then                // Should we move to it?
+#    s ← snew; e ← enew                            // Yes, change state.
+
+
+#  if enew < ebest then                               // Is this a new best?
+#    sbest ← snew; ebest ← enew                    // Save 'new neighbour' to 'best found'.
+# 	If we accept, then run a single new simulation and run DeletedJulian over it. Update the gamma prior values
+
+
+#  k ← k + 1                                       // One more evaluation done
+#return sbest                                      // Return the best solution found.#
+
+
+
+}
+
+=pod
+=item * DeletedJulian
+
+A new and crazy idea of mine - use simmualted annealing to maximise the likelihood of the parameter lambda (rate parameter) in the poisson model. I have literally no
+idea how long this will take or even if this is going to be  numerically fast enough. Lets find out ....
+
+=cut
+
+
+
 sub HGTTreeDeletionModel($$$$$$$) {
 	
 	my ($root,$model,$Iterations,$ndelsobs,$timedelsobserved,$TreeCacheHash,$HGTpercentage) = @_;
@@ -387,10 +488,28 @@ we draw $itr intergers from the distribution and then scatter then, for each of 
 =cut
 
 
-sub HGTTreeDeletionModelOptimised($$$$$$$) {
+sub HGTTreeDeletionModelOptimised {
 	
-	my ($root,$model,$Iterations,$ndelsobs,$timedelsobserved,$TreeCacheHash,$HGTpercentage) = @_;
+	my ($root,$model,$Iterations,$modelparams,$TreeCacheHash,$HGTpercentage) = @_;
 	#$root is the root of the subtree or the most recent common ancestor
+	
+	my ($deletion_rate,$ndelsobs,$timedelsobserved);
+	
+	if (scalar(@$modelparams) == 2){
+		
+		($ndelsobs,$timedelsobserved) = @$modelparams;
+		$deletion_rate = $ndelsobs/$timedelsobserved;
+		
+	}elsif(scalar(@$modelparams) == 1){
+		
+		($deletion_rate) = @$modelparams;
+		
+	}else{
+		
+		carp "Too many model paramters provided. WTF!?\n";
+	}
+	
+	carp "This function takes 6 arguments\n" unless (scalar(@_) == 6);
 
 	my $corrflag = ($model =~ m/corr/i)?1:0;
 	
@@ -399,8 +518,6 @@ sub HGTTreeDeletionModelOptimised($$$$$$$) {
     my %CladeGenomesHash; map{$CladeGenomesHash{$_} =1;}@CladeGenomes ;#Initialise a hash of the genomes in this subtree
 
 	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
-	
-	my $deletion_rate = $ndelsobs/$timedelsobserved;
 	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
 	#This is the average number of deletions expected at a given deletion rate. This is the single paramentr of input into a poisson model
 	
@@ -423,6 +540,8 @@ sub HGTTreeDeletionModelOptimised($$$$$$$) {
 		#Number of deletions in this iteration. This is drawn from a poissonian with mean equal to the number of deletions (the MLE for the exponential formulation of the poisson process)
 				
 	}elsif($model =~ m/negbin/i){
+		
+		carp "Issue here - ndels is undefined!" if ($ndelsobs ~~ undef);
 		
 		@NumberOfDeletions = random_negative_binomial($Iterations, $ndelsobs, $TotalBranchLength/($TotalBranchLength + $timedelsobserved));
 		#Number of deletions in this iteration. This is drawn from a negative binomial distribution with parameters determined so as to ensure that the formulation as a gamma-poisson mixture continues.
