@@ -287,6 +287,7 @@ my ($gamma_alpha,$gamma_beta) = ($dels,$time);
 			map{$SingleSimDomCombGenomeHash->{'Comb'}{$TreeCacheHash->{$_}{'node_id'}}=1}(keys(%$SingleCombGenomeSimHash));
 			
 			($gamma_alpha, $gamma_beta) = DeletedJulian($MRCA,0,0,$SingleSimDomCombGenomeHash,$TreeCacheHash,$treeroot,'Comb'); # ($tree,$AncestorNodeID,$dels,$time,$GenomesOfDomArch) - calculate deltion rate over tree
+			#Update the 'vaccinity paramters'. These are the paramters that feed into the gamma rate choice step
 		}
 		
 		
