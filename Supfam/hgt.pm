@@ -247,26 +247,26 @@ sub DeletedSimAnneal{
 	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
 	
 
-#s ← s0; e ← E(s)                                  // Initial state, energy.
-#sbest ← s; ebest ← e                              // Initial "best" solution
-#k ← 0                                             // Energy evaluation count.
+	#s ← s0; e ← E(s)                                  // Initial state, energy.
+	#sbest ← s; ebest ← e                              // Initial "best" solution
+	#k ← 0                                             // Energy evaluation count.
 
-my $lambda_original = $dels/$time;
-my $lamba_best = $lambda_original;
-
-my (undef,$predistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,100,[$lamba_best],$TreeCacheHash,$HGTpercentage/100);				
-my $BestLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$predistribution,101,$CladeSize);
-
-my $OriginalEnergy = $BestLambda_Energy;
-
-$opt_iterations = 100;
-
-#print $BestLambda_Energy;
-
-my $count = 1;
-my ($gamma_alpha,$gamma_beta) = ($dels,$time);
-
+	my $SimIterations = 100;
 	
+	my $lambda_original = $dels/$time;
+	my $lamba_best = $lambda_original;
+	
+	my (undef,$predistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lamba_best],$TreeCacheHash,$HGTpercentage/100);				
+	my $BestLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$predistribution,$SimIterations+1,$CladeSize);
+	
+	my $OriginalEnergy = $BestLambda_Energy;
+	
+	#print $BestLambda_Energy;
+	
+	my $count = 1;
+	my ($gamma_alpha,$gamma_beta) = ($dels,$time);
+
+		
 	while($count < $opt_iterations){
 		
 	
@@ -275,8 +275,8 @@ my ($gamma_alpha,$gamma_beta) = ($dels,$time);
 		my $lambda_new = random_gamma(1,$gamma_beta,$gamma_alpha);
 		#Choose a new value for lambda from the vaccinity of the current best values
 
-		my (undef,$simdistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,100,[$lambda_new],$TreeCacheHash,0);				
-		my $NewLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$simdistribution,101,$CladeSize);
+		my (undef,$simdistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lambda_new],$TreeCacheHash,0);				
+		my $NewLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$simdistribution,$SimIterations+1,$CladeSize);
 		#Self test treats a randomly chosen simulation as though it were a true result. We therefore reduce the distribution count at that point by one, as we are picking it out. This is a sanity check.
 					
 		if(random_uniform() <= exp(($NewLambda_Energy - $BestLambda_Energy)/$Temperature)){
@@ -286,8 +286,22 @@ my ($gamma_alpha,$gamma_beta) = ($dels,$time);
 			my $SingleSimDomCombGenomeHash = {};
 			map{$SingleSimDomCombGenomeHash->{'Comb'}{$TreeCacheHash->{$_}{'node_id'}}=1}(keys(%$SingleCombGenomeSimHash));
 			
-			($gamma_alpha, $gamma_beta) = DeletedJulian($MRCA,0,0,$SingleSimDomCombGenomeHash,$TreeCacheHash,$treeroot,'Comb'); # ($tree,$AncestorNodeID,$dels,$time,$GenomesOfDomArch) - calculate deltion rate over tree
-			#Update the 'vaccinity paramters'. These are the paramters that feed into the gamma rate choice step
+			my @SimGens = keys(%{$SingleCombGenomeSimHash});
+			
+			#print join("\t",@SimGens);
+			#print "\n";
+			
+			my $submrca;
+			$submrca = $SimGens[0];
+			
+			unless(scalar(@SimGens) <= 1){
+			
+				$submrca = FindMRCA($TreeCacheHash,$treeroot,\@SimGens) ;#($TreeCacheHash,$root,$LeavesArrayRef);
+				
+				($gamma_alpha, $gamma_beta) = DeletedJulian($submrca,0,0,$SingleSimDomCombGenomeHash,$TreeCacheHash,$treeroot,'Comb'); # ($tree,$AncestorNodeID,$dels,$time,$GenomesOfDomArch) - calculate deltion rate over tree
+				#Update the 'vaccinity paramters'. These are the paramters that feed into the gamma rate choice step	
+			}
+			
 		}
 		
 		
@@ -300,35 +314,12 @@ my ($gamma_alpha,$gamma_beta) = ($dels,$time);
 		$count++;
 	}
 
-my ($selftest,$distribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,1000,[$lamba_best],$TreeCacheHash,0);	
-
-$distribution->{$selftest}--;
-my $selftestval = calculatePosteriorQuantile($NoGenomesObserved,$distribution,1001,$CladeSize);
-
-return($lamba_best, $lambda_original,$BestLambda_Energy,$OriginalEnergy,$selftestval);
-
-#while k < kmax and e > emax                       // While time left & not good enough:
-#  T ← temperature(k/kmax)                         // Temperature calculation.
-
-#  snew ← neighbour(s)                             // Pick some neighbour.
-#Choose neighbour from a gamma
-
-#  enew ← E(snew)                                 // Compute its energy.
-
-
-#  if P(e, enew, T) > random() then                // Should we move to it?
-#    s ← snew; e ← enew                            // Yes, change state.
-
-
-#  if enew < ebest then                               // Is this a new best?
-#    sbest ← snew; ebest ← enew                    // Save 'new neighbour' to 'best found'.
-# 	If we accept, then run a single new simulation and run DeletedJulian over it. Update the gamma prior values
-
-
-#  k ← k + 1                                       // One more evaluation done
-#return sbest                                      // Return the best solution found.#
-
-
+	my ($selftest,$Distribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lamba_best],$TreeCacheHash,0);	
+	
+	$Distribution->{$selftest}--;
+	my $selftestval = calculatePosteriorQuantile($NoGenomesObserved,$Distribution,$SimIterations+1,$CladeSize);
+	
+	return($lamba_best, $lambda_original,$BestLambda_Energy,$OriginalEnergy,$selftestval);
 
 }
 
