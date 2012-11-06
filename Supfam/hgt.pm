@@ -256,8 +256,10 @@ sub DeletedSimAnneal{
 	my $lambda_original = $dels/$time;
 	my $lamba_best = $lambda_original;
 	
-	my (undef,$predistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lamba_best],$TreeCacheHash,$HGTpercentage/100);				
-	my $BestLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$predistribution,$SimIterations+1,$CladeSize);
+	my (undef,$predistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lamba_best],$TreeCacheHash,$HGTpercentage/100);
+	
+	$predistribution->{$NoGenomesObserved}++; #Prevents perl from kicking out by a divide by zero error here. A pseudocount
+	my $BestLambda_Energy = $predistribution->{$NoGenomesObserved}/$SimIterations+1;
 	
 	my $OriginalEnergy = $BestLambda_Energy;
 	
@@ -275,8 +277,9 @@ sub DeletedSimAnneal{
 		my $lambda_new = random_gamma(1,$gamma_beta,$gamma_alpha);
 		#Choose a new value for lambda from the vaccinity of the current best values
 
-		my (undef,$simdistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lambda_new],$TreeCacheHash,0);				
-		my $NewLambda_Energy = calculatePosteriorQuantile($NoGenomesObserved,$simdistribution,$SimIterations+1,$CladeSize);
+		my (undef,$simdistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lambda_new],$TreeCacheHash,0);
+		$simdistribution->{$NoGenomesObserved}++; #Prevents perl from kicking out by a divide by zero error here. A pseudocount
+		my $NewLambda_Energy = $simdistribution->{$NoGenomesObserved}/$SimIterations+1;
 		#Self test treats a randomly chosen simulation as though it were a true result. We therefore reduce the distribution count at that point by one, as we are picking it out. This is a sanity check.
 					
 		if(random_uniform() <= exp(($NewLambda_Energy - $BestLambda_Energy)/$Temperature)){
