@@ -259,8 +259,10 @@ sub DeletedSimAnneal{
 	my (undef,$predistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lamba_best],$TreeCacheHash,$HGTpercentage/100);
 	
 	$predistribution->{$NoGenomesObserved}++; #Prevents perl from kicking out by a divide by zero error here. A pseudocount
-	my $BestLambda_Energy = $predistribution->{$NoGenomesObserved}/$SimIterations+1;
 	
+	my $LH = $predistribution->{$NoGenomesObserved};
+	my $BestLambda_Energy = $LH/($SimIterations+1);
+
 	my $OriginalEnergy = $BestLambda_Energy;
 	
 	#print $BestLambda_Energy;
@@ -279,7 +281,8 @@ sub DeletedSimAnneal{
 
 		my (undef,$simdistribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lambda_new],$TreeCacheHash,0);
 		$simdistribution->{$NoGenomesObserved}++; #Prevents perl from kicking out by a divide by zero error here. A pseudocount
-		my $NewLambda_Energy = $simdistribution->{$NoGenomesObserved}/$SimIterations+1;
+		my $LH = $simdistribution->{$NoGenomesObserved};
+		my $NewLambda_Energy = $LH/($SimIterations+1);
 		#Self test treats a randomly chosen simulation as though it were a true result. We therefore reduce the distribution count at that point by one, as we are picking it out. This is a sanity check.
 					
 		if(random_uniform() <= exp(($NewLambda_Energy - $BestLambda_Energy)/$Temperature)){
