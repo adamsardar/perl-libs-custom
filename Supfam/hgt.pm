@@ -561,7 +561,7 @@ sub HGTTreeDeletionModelOptimised {
 	$PointTree->UniformAssign($NumberOfDelPoints);
 	## Uniformly set deletion points across the subtree of interest.
 	
-	foreach my $DeletionSimultation (@NumberOfDeletions){ #For $Iterations
+	while  (my $DeletionSimultation = pop(@NumberOfDeletions)){ #For $Iterations
 		
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
 		my $DeletionPoints = [];
