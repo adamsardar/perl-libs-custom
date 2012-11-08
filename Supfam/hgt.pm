@@ -557,21 +557,24 @@ sub HGTTreeDeletionModelOptimised {
 	my @HGTUniformSimsPool = random_uniform($Iterations,0,1);
 	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
+	my $NumberOfDelPoints = 1.2*$Iterations*$Expected_deletions;
+	$PointTree->UniformAssign($NumberOfDelPoints);
+	## Uniformly set deletion points across the subtree of interest.
+	
 	foreach my $DeletionSimultation (@NumberOfDeletions){ #For $Iterations
 		
-		@$UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions, drawn from a poissonian above, uniformly distributed across the tree.
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
-		#$DeletionsNumberDistribution->{$DeletionSimultation}++;
+		my $DeletionPoints = $PointTree->UniformDraw($DeletionSimultation);
+		# A number ($DeletionSimultation) of uniform random deleions scattered over the tree.
 		
-		my $DeletionPoints = $PointTree->Search($UniformDeletions);#Find the node directly below the deletion
-					
-		foreach my $DeletionPoint (@$DeletionPoints){
+		while (my $DeletionPoint = pop(@$DeletionPoints)){
 			
 			my $DeletedBranch = $ProbabilityHash->{$DeletionPoint};
 
 			map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}};
 			delete($ModelCladeGenomesHash{$DeletedBranch}) if ($TreeCacheHash->{$DeletedBranch}{'is_Leaf'});		
 		}
+		#Assign these deleions to the 'Model Genomes Hash'
 		
 		if(pop(@HGTUniformSimsPool) < $HGTpercentage){
 			#Random assignment of dom arches to genomes

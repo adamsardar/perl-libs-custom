@@ -57,6 +57,7 @@ use Data::Dumper; #Allow easy print dumps of datastructures for debugging
 use Carp;
 use List::Util;
 use POSIX ('ceil');
+use Math::Random ('random_uniform');
 
 our $AUTOLOAD;  # it's a package global
 
@@ -65,6 +66,7 @@ my %fields = (
     TREE        => undef,
     LOCK         => 0,
     NPOINTS       => 0,
+    DELPOINTS => [],
 );
 
 
@@ -302,6 +304,54 @@ sub Point_Search_Recursively{
 A sub called by the Search method. Please don't call manually. This will seek the interval/divider immediitaly above the point given - this is useful for mapping, say, continuous points
 along a given interval to discrete times (e.g. deletion events to nodes on a tree).
 =cut
+
+
+sub UniformAssign{
+	
+	my $self = shift;
+    my $NumberOfPoints = shift;
+    
+    my $UniformDeletions = [];
+    @$UniformDeletions = random_uniform($NumberOfPoints,0,1);
+    
+	my $DeletionPoints = $self->Search($UniformDeletions);#Find the node directly below the deletion
+	$self->DELPOINTS($DeletionPoints);
+	
+	return(1);
+}
+
+=item * UniformAssign
+Creates an array of deletion points across a subtree that can be drawn from using UniformDraw. This is done so that a pool of deletions can be constructed, and then simply pulled from as required.
+=cut
+
+sub UniformDraw{
+	
+	my $self = shift;
+    my $NumberOfDraws = shift;
+    
+    my $DelPointsArray = $self->DELPOINTS;
+    
+    $self->UniformAssign($NumberOfDraws * 50) if(scalar(@$DelPointsArray) < $NumberOfDraws);
+	
+	my $ReturnedDelPoints = [];
+	
+	my $count = 0;
+	
+	while ($count < $NumberOfDraws){
+		
+		push(@$ReturnedDelPoints,pop($DelPointsArray));	
+		$count++;
+	}
+
+	return($ReturnedDelPoints);
+}
+
+=item * UniformAssign
+Creates an array of deletion points across a subtree that can be drawn from using UniformDraw.
+=cut
+
+
+
 
 sub Point_Search_Iteratively{
    
