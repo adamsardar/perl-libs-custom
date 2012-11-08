@@ -564,7 +564,8 @@ sub HGTTreeDeletionModelOptimised {
 	foreach my $DeletionSimultation (@NumberOfDeletions){ #For $Iterations
 		
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
-		my $DeletionPoints = $PointTree->UniformDraw($DeletionSimultation);
+		my $DeletionPoints = [];
+		$PointTree->UniformDraw($DeletionSimultation,$DeletionPoints);
 		# A number ($DeletionSimultation) of uniform random deleions scattered over the tree.
 		
 		while (my $DeletionPoint = pop(@$DeletionPoints)){

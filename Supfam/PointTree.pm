@@ -231,7 +231,7 @@ sub Search {
    
     my $self = shift;
     my $PointsToSearch = shift;
-    
+    my $IntervalPoints = shift;
     
     carp "This method takes a single pointer to an array as function input. Recieved a ".ref($PointsToSearch)."\n" unless (ref($PointsToSearch) eq 'ARRAY');
     
@@ -248,8 +248,6 @@ sub Search {
     
     my $Tree = $self->TREE;
 	
-	my $IntervalPoints = [];
-	
 	while(my $PointToSearch = pop(@$PointsToSearch)){
 
 		my $IntervalPoint; #This will be the returned value. We propogate a pointer to this down through the levels of the following tree search
@@ -259,8 +257,6 @@ sub Search {
 	    #print $IntervalPoint;
 	 	push(@$IntervalPoints,$IntervalPoint);
 	}
-    
-	return($IntervalPoints);
 }
 
 =item * Point_Search_Recursively
@@ -313,11 +309,12 @@ sub UniformAssign{
     
     my $UniformDeletions = [];
     @$UniformDeletions = random_uniform($NumberOfPoints,0,1);
+ 
     
-	my $DeletionPoints = $self->Search($UniformDeletions);#Find the node directly below the deletion
+	my $DeletionPoints = [];
+	$self->Search($UniformDeletions,$DeletionPoints);#Find the node directly below the deletion
 	$self->DELPOINTS($DeletionPoints);
-	
-	return(1);
+
 }
 
 =item * UniformAssign
@@ -328,27 +325,25 @@ sub UniformDraw{
 	
 	my $self = shift;
     my $NumberOfDraws = shift;
+	my $ReturnedDelPointsArray = shift;
     
     my $DelPointsArray = $self->{'DELPOINTS'};
     #Just to avoid AUTOLOAD and its speed drop. This is bad, bad, bad coding form. But perl is shite for OO, so what are you gonna do?
     
     $self->UniformAssign($NumberOfDraws * 50) if(scalar(@$DelPointsArray) < $NumberOfDraws);
-	
-	my $ReturnedDelPoints = [];
-	
+		
 	my $count = 0;
 	
 	while ($count < $NumberOfDraws){
 		
-		push(@$ReturnedDelPoints,pop($DelPointsArray));	
+		push(@$ReturnedDelPointsArray,pop($DelPointsArray));	
 		$count++;
 	}
 
-	return($ReturnedDelPoints);
 }
 
-=item * UniformAssign
-Creates an array of deletion points across a subtree that can be drawn from using UniformDraw.
+=item * UniformDraw
+Pull a whole load of uniform dleetions from a pre-stored pool, then map them back to the tree.
 =cut
 
 
