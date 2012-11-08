@@ -554,7 +554,7 @@ sub HGTTreeDeletionModelOptimised {
 	my $UniformDeletions = [];
 	
 	my $SingleSimGenomeHash = {};
-	my @HGTUniformSimsPool = random_uniform($Iterations,0,1);
+	my @HGTUniformSimsPool = random_uniform($Iterations,0,1) if($HGTpercentage > 0);
 	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
 	my $NumberOfDelPoints = 1.2*$Iterations*$Expected_deletions;
@@ -576,17 +576,19 @@ sub HGTTreeDeletionModelOptimised {
 			delete($ModelCladeGenomesHash{$DeletedBranch}) if ($TreeCacheHash->{$DeletedBranch}{'is_Leaf'});		
 		}
 		#Assign these deleions to the 'Model Genomes Hash'
-		
-		if(pop(@HGTUniformSimsPool) < $HGTpercentage){
-			#Random assignment of dom arches to genomes
-			
-			my @GenomesWithDAByHGT = @{HGTshuffle(\@CladeGenomes,'Power')};
-			#At current we only allow for the current model to be used.
-			
-			if(scalar(@GenomesWithDAByHGT) > 0){
-				map{$ModelCladeGenomesHash{$_} =1;}@GenomesWithDAByHGT;
-				#Add a chunk of domain architectures into the clade genomes list
-			}
+
+		if($HGTpercentage){
+			if(pop(@HGTUniformSimsPool) < $HGTpercentage){
+				#Random assignment of dom arches to genomes
+				
+				my @GenomesWithDAByHGT = @{HGTshuffle(\@CladeGenomes,'Power')};
+				#At current we only allow for the current model to be used.
+				
+				if(scalar(@GenomesWithDAByHGT) > 0){
+					map{$ModelCladeGenomesHash{$_} =1;}@GenomesWithDAByHGT;
+					#Add a chunk of domain architectures into the clade genomes list
+				}
+		}
 			
 		}
 			

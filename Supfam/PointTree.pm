@@ -135,8 +135,6 @@ sub build {
 	$self->TREE($Tree);
 	$self->NPOINTS(scalar(@$Intervals));
 	$self->LOCK(1);
-	
-	return 1;
 }
 
 =item * enter_tree
@@ -151,18 +149,9 @@ sub enter_tree{
 	my ($Tree,$PointsOnLevel) = @_;
 	# Tree is a hash form of the tree under construction, $PointsOnLevel is an array ref of [list of items on this level]
 	
-	if(scalar(@$PointsOnLevel) > 0){
-		
-#		print scalar(@$PointsOnLevel);
-#		print "  <- number of points\n";
-#		
-#		print join(' - ',@$PointsOnLevel);
-#		print "\n";
-		
-	}else{
+	unless(scalar(@$PointsOnLevel) > 0){
 		
 		carp "No points on this level!\n";
-		
 	}
 	
 	
@@ -189,14 +178,7 @@ sub enter_tree{
 		my $MidpointIndex = $Midpoint-1;
 		
 		$Tree->{'Dividing_Point'} = $SortedPoints[$MidpointIndex];
-		
-#		print $MidpointIndex."  <- Midpoint\n";
-#		print $Tree->{'PointsOnLevel'};
-#		print "  <- No Nodes on level\n";
-#		print $Tree->{'Dividing_Point'};
-#		print "  <- Divider\n";
-#		print "\n";
-				
+						
 		#Collect Left Points of divider
 		@$LeftLineage=@SortedPoints[0 .. $MidpointIndex];
 		
@@ -219,13 +201,11 @@ sub enter_tree{
 		croak "Somethign seriously wrong with point tree construction - less than one interval on this level!\n";
 	}
 	
-	
-	return(1);
 }
 
 
 =item * Search
-Given a single point, this function will find 
+Given an array ref of points on an interval used to construct the PointTree, this function will find them all and return the values back in the arrayref provided ($IntervalPoints)
 =cut
 sub Search {
    
@@ -235,17 +215,8 @@ sub Search {
     
     carp "This method takes a single pointer to an array as function input. Recieved a ".ref($PointsToSearch)."\n" unless (ref($PointsToSearch) eq 'ARRAY');
     
-    
-#    unless($self->LOCK && $self->TREE){
-#    
-#	    croak "You need to build a tree using the 'build' method first before you can search it!.\n" 
-#    	#Check if TREE exists and that a LOCK is in place
-#    }
-
-#Turning off a load of stuff because AUTOLOAD is so feckign slow in perl
-
-    #Recursive search to look through tree and find point of interest
-    
+    #Search to look through tree and find point of interest
+   
     my $Tree = $self->TREE;
 	
 	while(my $PointToSearch = pop(@$PointsToSearch)){
@@ -311,10 +282,8 @@ sub UniformAssign{
     @$UniformDeletions = random_uniform($NumberOfPoints,0,1);
  
     
-	my $DeletionPoints = [];
+	my $DeletionPoints = $self->{'DELPOINTS'};
 	$self->Search($UniformDeletions,$DeletionPoints);#Find the node directly below the deletion
-	$self->DELPOINTS($DeletionPoints);
-
 }
 
 =item * UniformAssign
