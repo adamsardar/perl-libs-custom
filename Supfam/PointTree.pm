@@ -329,7 +329,8 @@ sub UniformDraw{
 	my $self = shift;
     my $NumberOfDraws = shift;
     
-    my $DelPointsArray = $self->DELPOINTS;
+    my $DelPointsArray = $self->{'DELPOINTS'};
+    #Just to avoid AUTOLOAD and its speed drop. This is bad, bad, bad coding form. But perl is shite for OO, so what are you gonna do?
     
     $self->UniformAssign($NumberOfDraws * 50) if(scalar(@$DelPointsArray) < $NumberOfDraws);
 	
