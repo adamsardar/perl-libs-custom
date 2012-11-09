@@ -318,9 +318,6 @@ sub UniformDraw{
 Pull a whole load of uniform dleetions from a pre-stored pool, then map them back to the tree.
 =cut
 
-
-
-
 sub Point_Search_Iteratively{
    
    carp "This sub takes 3 arguments exactly\n" unless(scalar(@_) == 3);
