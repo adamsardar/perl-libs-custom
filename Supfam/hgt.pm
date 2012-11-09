@@ -557,7 +557,7 @@ sub HGTTreeDeletionModelOptimised {
 	my @HGTUniformSimsPool = random_uniform($Iterations,0,1) if($HGTpercentage > 0);
 	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
-	my $NumberOfDelPoints = 1.2*$Iterations*$Expected_deletions;
+	my $NumberOfDelPoints = 0.6*$Iterations*$Expected_deletions;
 	$PointTree->UniformAssign($NumberOfDelPoints);
 	## Uniformly set deletion points across the subtree of interest.
 	

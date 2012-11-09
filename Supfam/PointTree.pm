@@ -67,6 +67,7 @@ my %fields = (
     LOCK         => 0,
     NPOINTS       => 0,
     DELPOINTS => [],
+    NUMBEROFDELPOINTS => 0,
 );
 
 
@@ -135,6 +136,9 @@ sub build {
 	$self->TREE($Tree);
 	$self->NPOINTS(scalar(@$Intervals));
 	$self->LOCK(1);
+	$self->DELPOINTS([]);
+	
+	return 1;
 }
 
 =item * enter_tree
@@ -164,9 +168,7 @@ sub enter_tree{
 			return(1);
 		
 	}elsif($Tree->{'PointsOnLevel'} > 1){
-		
-	#Enter Elements into this level
-		
+				
 		#Sort items
 		my @SortedPoints = sort{$a <=> $b}@$PointsOnLevel;
 		
@@ -178,7 +180,7 @@ sub enter_tree{
 		my $MidpointIndex = $Midpoint-1;
 		
 		$Tree->{'Dividing_Point'} = $SortedPoints[$MidpointIndex];
-						
+
 		#Collect Left Points of divider
 		@$LeftLineage=@SortedPoints[0 .. $MidpointIndex];
 		
@@ -218,7 +220,7 @@ sub Search {
     #Search to look through tree and find point of interest
    
     my $Tree = $self->TREE;
-	
+
 	while(my $PointToSearch = pop(@$PointsToSearch)){
 
 		my $IntervalPoint; #This will be the returned value. We propogate a pointer to this down through the levels of the following tree search
@@ -281,13 +283,14 @@ sub UniformAssign{
     my $UniformDeletions = [];
     @$UniformDeletions = random_uniform($NumberOfPoints,0,1);
  
-    
-	my $DeletionPoints = $self->{'DELPOINTS'};
+	my $DeletionPoints = $self->DELPOINTS;
+	$self->NUMBEROFDELPOINTS($NumberOfPoints);
+
 	$self->Search($UniformDeletions,$DeletionPoints);#Find the node directly below the deletion
 }
 
 =item * UniformAssign
-Creates an array of deletion points across a subtree that can be drawn from using UniformDraw. This is done so that a pool of deletions can be constructed, and then simply pulled from as required.
+Populates a stock array of deletion points across a subtree that can be drawn from using UniformDraw. This is done so that a pool of deletions can be constructed, and then simply pulled from as required.
 =cut
 
 sub UniformDraw{
@@ -295,12 +298,12 @@ sub UniformDraw{
 	my $self = shift;
     my $NumberOfDraws = shift;
 	my $ReturnedDelPointsArray = shift;
+
     
     my $DelPointsArray = $self->{'DELPOINTS'};
     #Just to avoid AUTOLOAD and its speed drop. This is bad, bad, bad coding form. But perl is shite for OO, so what are you gonna do?
-    
-    $self->UniformAssign($NumberOfDraws * 50) if(scalar(@$DelPointsArray) < $NumberOfDraws);
-		
+    $self->UniformAssign($self->NUMBEROFDELPOINTS) if(scalar(@$DelPointsArray) < $NumberOfDraws);
+
 	my $count = 0;
 	
 	while ($count < $NumberOfDraws){
