@@ -557,14 +557,15 @@ sub HGTTreeDeletionModelOptimised {
 	my @HGTUniformSimsPool = random_uniform($Iterations,0,1);
 	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
-	my $NumberOfDelPoints = 1.2*$Iterations*$Expected_deletions;
+	my $NumberOfDelPoints = 0.6*$Iterations*$Expected_deletions;
 	$PointTree->UniformAssign($NumberOfDelPoints);
 	## Uniformly set deletion points across the subtree of interest.
 	
 	foreach my $DeletionSimultation (@NumberOfDeletions){ #For $Iterations
 		
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
-		my $DeletionPoints = $PointTree->UniformDraw($DeletionSimultation);
+		my $DeletionPoints = [];
+		$PointTree->UniformDraw($DeletionSimultation,$DeletionPoints);
 		# A number ($DeletionSimultation) of uniform random deleions scattered over the tree.
 		
 		while (my $DeletionPoint = pop(@$DeletionPoints)){

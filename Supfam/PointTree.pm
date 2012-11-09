@@ -67,6 +67,7 @@ my %fields = (
     LOCK         => 0,
     NPOINTS       => 0,
     DELPOINTS => [],
+    NUMBEROFDELPOINTS => 0,
 );
 
 
@@ -135,6 +136,7 @@ sub build {
 	$self->TREE($Tree);
 	$self->NPOINTS(scalar(@$Intervals));
 	$self->LOCK(1);
+	$self->DELPOINTS([]);
 	
 	return 1;
 }
@@ -151,18 +153,10 @@ sub enter_tree{
 	my ($Tree,$PointsOnLevel) = @_;
 	# Tree is a hash form of the tree under construction, $PointsOnLevel is an array ref of [list of items on this level]
 	
-	if(scalar(@$PointsOnLevel) > 0){
-		
-#		print scalar(@$PointsOnLevel);
-#		print "  <- number of points\n";
-#		
-#		print join(' - ',@$PointsOnLevel);
-#		print "\n";
-		
-	}else{
+	unless(scalar(@$PointsOnLevel) > 0){
+
 		
 		carp "No points on this level!\n";
-		
 	}
 	
 	
@@ -175,9 +169,7 @@ sub enter_tree{
 			return(1);
 		
 	}elsif($Tree->{'PointsOnLevel'} > 1){
-		
-	#Enter Elements into this level
-		
+				
 		#Sort items
 		my @SortedPoints = sort{$a <=> $b}@$PointsOnLevel;
 		
@@ -190,13 +182,6 @@ sub enter_tree{
 		
 		$Tree->{'Dividing_Point'} = $SortedPoints[$MidpointIndex];
 		
-#		print $MidpointIndex."  <- Midpoint\n";
-#		print $Tree->{'PointsOnLevel'};
-#		print "  <- No Nodes on level\n";
-#		print $Tree->{'Dividing_Point'};
-#		print "  <- Divider\n";
-#		print "\n";
-				
 		#Collect Left Points of divider
 		@$LeftLineage=@SortedPoints[0 .. $MidpointIndex];
 		
@@ -231,25 +216,12 @@ sub Search {
    
     my $self = shift;
     my $PointsToSearch = shift;
-    
+    my $IntervalPoints = shift;
     
     carp "This method takes a single pointer to an array as function input. Recieved a ".ref($PointsToSearch)."\n" unless (ref($PointsToSearch) eq 'ARRAY');
     
-    
-#    unless($self->LOCK && $self->TREE){
-#    
-#	    croak "You need to build a tree using the 'build' method first before you can search it!.\n" 
-#    	#Check if TREE exists and that a LOCK is in place
-#    }
-
-#Turning off a load of stuff because AUTOLOAD is so feckign slow in perl
-
-    #Recursive search to look through tree and find point of interest
-    
     my $Tree = $self->TREE;
-	
-	my $IntervalPoints = [];
-	
+
 	while(my $PointToSearch = pop(@$PointsToSearch)){
 
 		my $IntervalPoint; #This will be the returned value. We propogate a pointer to this down through the levels of the following tree search
@@ -259,8 +231,6 @@ sub Search {
 	    #print $IntervalPoint;
 	 	push(@$IntervalPoints,$IntervalPoint);
 	}
-    
-	return($IntervalPoints);
 }
 
 =item * Point_Search_Recursively
@@ -314,27 +284,25 @@ sub UniformAssign{
     my $UniformDeletions = [];
     @$UniformDeletions = random_uniform($NumberOfPoints,0,1);
     
-	my $DeletionPoints = $self->Search($UniformDeletions);#Find the node directly below the deletion
-	$self->DELPOINTS($DeletionPoints);
-	
-	return(1);
+	my $DeletionPoints = $self->DELPOINTS;
+	$self->NUMBEROFDELPOINTS($NumberOfPoints);
+	$self->Search($UniformDeletions,$DeletionPoints);#Find the node directly below the deletion
 }
 
 =item * UniformAssign
-Creates an array of deletion points across a subtree that can be drawn from using UniformDraw. This is done so that a pool of deletions can be constructed, and then simply pulled from as required.
+Populates a stock array of deletion points across a subtree that can be drawn from using UniformDraw. This is done so that a pool of deletions can be constructed, and then simply pulled from as required.
 =cut
 
 sub UniformDraw{
 	
 	my $self = shift;
     my $NumberOfDraws = shift;
+    my $ReturnedDelPoints = shift;
     
     my $DelPointsArray = $self->DELPOINTS;
     
-    $self->UniformAssign($NumberOfDraws * 50) if(scalar(@$DelPointsArray) < $NumberOfDraws);
-	
-	my $ReturnedDelPoints = [];
-	
+    $self->UniformAssign($self->NUMBEROFDELPOINTS) if(scalar(@$DelPointsArray) < $NumberOfDraws);
+		
 	my $count = 0;
 	
 	while ($count < $NumberOfDraws){
@@ -343,7 +311,6 @@ sub UniformDraw{
 		$count++;
 	}
 
-	return($ReturnedDelPoints);
 }
 
 =item * UniformAssign
