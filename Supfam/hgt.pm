@@ -322,7 +322,7 @@ sub DeletedSimAnneal{
 
 	my ($selftest,$Distribution,undef,undef) = HGTTreeDeletionModelOptimised($MRCA,$model,$SimIterations,[$lamba_best],$TreeCacheHash,0);	
 	
-	$Distribution->{$selftest}-- unless($Distribution->{$selftest} ~~ 0);
+	$Distribution->{$selftest}-- if(exists($Distribution->{$selftest}));
 	my $selftestval = calculatePosteriorQuantile($NoGenomesObserved,$Distribution,$SimIterations+1,$CladeSize);
 	
 	return($lamba_best, $lambda_original,$BestLambda_Energy,$OriginalEnergy,$selftestval);
