@@ -386,7 +386,9 @@ sub HGTTreeDeletionModel($$$$$$$) {
 	my @HGTUniformSimsPool = random_uniform($Iterations,0,1);
 	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
-	foreach my $DeletionSimultation (@NumberOfDeletions){ #For $Iterations
+	while (@NumberOfDeletions){
+		
+		my $DeletionSimultation = pop(@NumberOfDeletions);
 		
 		@$UniformDeletions = random_uniform($DeletionSimultation,0,1); # Number of deletions, drawn from a poissonian above, uniformly distributed across the tree.
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
@@ -561,12 +563,15 @@ sub HGTTreeDeletionModelOptimised {
 	$PointTree->UniformAssign($NumberOfDelPoints);
 	## Uniformly set deletion points across the subtree of interest.
 	
-	while  (my $DeletionSimultation = pop(@NumberOfDeletions)){ #For $Iterations
+	while (@NumberOfDeletions){
+		
+		my $DeletionSimultation = pop(@NumberOfDeletions);
 		
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
 		my $DeletionPoints = [];
 		$PointTree->UniformDraw($DeletionSimultation,$DeletionPoints);
 		# A number ($DeletionSimultation) of uniform random deleions scattered over the tree.
+	
 		
 		while (my $DeletionPoint = pop(@$DeletionPoints)){
 			
@@ -639,9 +644,6 @@ sub HGTTreeDeletionModelOptimised {
 	}
 	
 	my $SelftestValue = $$RawResults[scalar(rand(@$RawResults))]; # A single uniform random simulation value
-	
-	#my ($selftest_index) =  random_uniform_integer(1,0,(scalar(@$RawResults)-1));		
-	#my $SelftestValue = $RawResults->[$selftest_index]; # A single uniform random simulation value
 	
 	unless($Iterations == 1){
 		
