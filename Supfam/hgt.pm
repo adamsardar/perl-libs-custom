@@ -7,7 +7,7 @@ Supfam::hgt
 
 =head1 SYNOPSIS
 
-Holds functions related to calculating infromation regarding horizontal gene transfer 
+Holds functions related to calculating and processing information regarding horizontal gene transfer of domain architectures
 use Supfam::hgt;
 
 =head1 AUTHOR
@@ -16,7 +16,7 @@ Adam Sardar (adam.sardar@bris.ac.uk)
 
 =head1 COPYRIGHT
 
-Copyright 2011 Gough Group, University of Bristol.
+Copyright 2011-2012 Gough Group, University of Bristol.
 
 =head1 SEE ALSO
 
@@ -49,8 +49,7 @@ our $VERSION   = 1.00;
 
 use lib "$ENV{HOME}/bin/perl-libs-custom/";
 
-use strict;
-use warnings;
+use Modern::Perl;
 
 use Time::HiRes;
 use POSIX qw(floor ceil);
@@ -62,13 +61,12 @@ use Supfam::Utils;
 use Supfam::PointTree; #For use in the optimised CorrPoiss
 
 use Data::Dumper;
-
 use List::Util qw(sum);
 use Math::Decimal qw(dec_cmp is_dec_number);
-
 use Algorithm::Combinatorics qw(combinations);
-
 use Carp;
+use Carp::Assert;
+use Carp::Assert::More;
 
 sub DeletedJulian($$$$$$$){ 
 	#($subtree,0,0,$NodesObserved)
@@ -490,8 +488,12 @@ we draw $itr intergers from the distribution and then scatter then, for each of 
 
 sub HGTTreeDeletionModelOptimised {
 	
-	my ($root,$model,$Iterations,$modelparams,$TreeCacheHash,$HGTpercentage) = @_;
-	#$root is the root of the subtree or the most recent common ancestor
+	my ($root,$model,$Iterations,$modelparams,$TreeCacheHash,$HGTprob,$HGTmodel) = @_;
+	#$root is the root of the subtree or the most recent common ancestor, HGTmodel is the type of model 
+	
+	assert_in($model,['corrpoisson','corrnegbin','poisson','negbin']);
+	assert_in($HGTmodel,['scatter','drop'],'Allowed HGTmodels are "scatter" and "drop"');
+	#Ensure that the models are set up correctly
 	
 	my ($deletion_rate,$ndelsobs,$timedelsobserved);
 	
@@ -509,7 +511,7 @@ sub HGTTreeDeletionModelOptimised {
 		carp "Too many model paramters provided. WTF!?\n";
 	}
 	
-	carp "This function takes 6 arguments\n" unless (scalar(@_) == 6);
+	assert(scalar(@_) == 7, "This function takes 7 arguments\n");
 
 	my $corrflag = ($model =~ m/corr/i)?1:0;
 	
@@ -529,8 +531,6 @@ sub HGTTreeDeletionModelOptimised {
     my $PointTree = Supfam::PointTree->new;
     $PointTree->build(\@Points);
   	#Create the PointTree - this is for fast searching of the linear space to find where a deletion ahs occured on our tree
-      
-    ###  
      
 	my @NumberOfDeletions;
 	
@@ -542,27 +542,25 @@ sub HGTTreeDeletionModelOptimised {
 	}elsif($model =~ m/negbin/i){
 		
 		carp "Issue here - ndels is undefined!" if ($ndelsobs ~~ undef);
-		
 		@NumberOfDeletions = random_negative_binomial($Iterations, $ndelsobs, $TotalBranchLength/($TotalBranchLength + $timedelsobserved));
 		#Number of deletions in this iteration. This is drawn from a negative binomial distribution with parameters determined so as to ensure that the formulation as a gamma-poisson mixture continues.
 	}
 	#####
 	
-	
 	my $DeletionsNumberDistribution = {}; #This is a hash of the number of deletions modelled in the simualtion
 	my $RawResults = []; #Create an array to store the direct simulation results, rather than the results aggregated into a hash like $distribution  
 	my $distribution = {}; # This is ultimately what the distributon of the model runs will be stored in
-	
-	my $UniformDeletions = [];
-	
 	my $SingleSimGenomeHash = {};
-	my @HGTUniformSimsPool = random_uniform($Iterations,0,1) if($HGTpercentage > 0);
+	#Prealloacte a few variables used to hold simulation results
+	
+	my @HGTUniformSimsPool = random_uniform(2*$Iterations,0,1) if($HGTprob > 0);
 	#Crete a pool of unifrom random numbers for determining if an HGT has occured or not.
 	
-	my $NumberOfDelPoints = 0.6*$Iterations*$Expected_deletions;
+	my $NumberOfDelPoints = int(0.6*$Iterations*$Expected_deletions);
+
 	$PointTree->UniformAssign($NumberOfDelPoints);
 	## Uniformly set deletion points across the subtree of interest.
-	
+
 	while (@NumberOfDeletions){
 		
 		my $DeletionSimultation = pop(@NumberOfDeletions);
@@ -570,9 +568,8 @@ sub HGTTreeDeletionModelOptimised {
 		my %ModelCladeGenomesHash = %CladeGenomesHash;
 		my $DeletionPoints = [];
 		$PointTree->UniformDraw($DeletionSimultation,$DeletionPoints);
-		# A number ($DeletionSimultation) of uniform random deleions scattered over the tree.
+		# A number ($DeletionSimultation) of uniform random deletions, uniform randomly scattered over the tree.
 	
-		
 		while (my $DeletionPoint = pop(@$DeletionPoints)){
 			
 			my $DeletedBranch = $ProbabilityHash->{$DeletionPoint};
@@ -580,21 +577,76 @@ sub HGTTreeDeletionModelOptimised {
 			map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}};
 			delete($ModelCladeGenomesHash{$DeletedBranch}) if ($TreeCacheHash->{$DeletedBranch}{'is_Leaf'});		
 		}
-		#Assign these deleions to the 'Model Genomes Hash'
+		#Assign these deleitons to the 'Model Genomes Hash' (i.e. delete all the descendent possessions of the DA)
 
-		if($HGTpercentage){
-			if(pop(@HGTUniformSimsPool) < $HGTpercentage){
-				#Random assignment of dom arches to genomes
-				
-				my @GenomesWithDAByHGT = @{HGTshuffle(\@CladeGenomes,'Power')};
-				#At current we only allow for the current model to be used.
-				
-				if(scalar(@GenomesWithDAByHGT) > 0){
-					map{$ModelCladeGenomesHash{$_} =1;}@GenomesWithDAByHGT;
-					#Add a chunk of domain architectures into the clade genomes list
-				}
-		}
+
+		if($HGTprob){
+			#A time saving excercise - if HGTPercentage is off, we can jsut ignore all the code to do with HGT simulaton
 			
+			@HGTUniformSimsPool = random_uniform(0.5*$Iterations,0,1) if(@HGTUniformSimsPool <= 40);
+	
+			while(pop(@HGTUniformSimsPool) < $HGTprob){
+				#Follow a binomial distribution of HGT probablities.
+				
+				if($HGTmodel eq 'drop'){
+					
+					my $HGTPoint = [];
+					$PointTree->UniformDraw(1,$HGTPoint);
+					my $HGTBranch = $ProbabilityHash->{$$HGTPoint[0]};
+					#Drop a DA in a random point on the tree. This is identical to the way that we drop a deletion at unoform random on the tree, so we use the same function call
+									
+					unless($TreeCacheHash->{$HGTBranch}{'is_Leaf'}){
+						
+						my $exists_flag = 0;
+						map{$exists_flag = 1 if(exists($ModelCladeGenomesHash{$_}))}@{$TreeCacheHash->{$HGTBranch}{'Clade_Leaves'}};
+						next if ($exists_flag);
+						#Test to see if the DA is possesse by a genome of the HGT transfered ancestor. If so, next. Assume that the signal is too weak to spot with current method
+						#Else, map all the genomes below the point as possessing the DA (they might have been deleted in a previous iteration) in %ModelCladeGenomesHash
+
+						my $SubTreeProbabilityHash = $TreeCacheHash->{$HGTBranch}{'Probability_Hash'};
+	   					my @SubTreePoints = keys(%$SubTreeProbabilityHash);
+	  					my $HGTSubPointTree = Supfam::PointTree->new;
+	   					$HGTSubPointTree->build(\@SubTreePoints);
+	   					#We're going to do a round of deletion simulations here, so construct a new set of objects for use in the simulation
+	   					
+						my $SubTreeTotalBranchLength = $TreeCacheHash->{$HGTBranch}{'Total_branch_lengths'};
+						my $SubTreeExpected_deletions = $deletion_rate*$SubTreeTotalBranchLength;
+						my ($SubTreeDeletions) = random_poisson(1,$SubTreeExpected_deletions);
+						#A number of deletions, equal to the poisson distrbution over the sub tree at a given rate
+						
+						$HGTSubPointTree->UniformAssign($SubTreeDeletions);
+						
+						$DeletionPoints = [];
+						$HGTSubPointTree->UniformDraw($DeletionSimultation,$DeletionPoints);
+						
+						while (my $DeletionPoint = pop(@$DeletionPoints)){
+		
+							my $DeletedBranch = $SubTreeProbabilityHash->{$DeletionPoint};
+
+							map{delete($ModelCladeGenomesHash{$_})}@{$TreeCacheHash->{$DeletedBranch}{'Clade_Leaves'}};
+							delete($ModelCladeGenomesHash{$DeletedBranch}) if ($TreeCacheHash->{$DeletedBranch}{'is_Leaf'});		
+						}
+						#Run the deletion model on sub tree at the same rate as  before
+						
+							
+					}else{
+						
+						$ModelCladeGenomesHash{$HGTBranch} =1;
+						#If the architecture has been transfered into a leaf node, set it as existing in %ModelCladeGenomesHash. Note that it could have already existed in 
+					}
+					
+				}elsif($HGTmodel eq 'scatter'){
+				
+					#Random assignment of dom arches to genomes
+					my @GenomesWithDAByHGT = @{HGTshuffle(\@CladeGenomes,'Power')};
+					#At current we only allow for the current model to be used.
+					
+					if(scalar(@GenomesWithDAByHGT) > 0){
+						map{$ModelCladeGenomesHash{$_} =1;}@GenomesWithDAByHGT;
+						#Add a chunk of domain architectures into the clade genomes list
+					}
+				}
+			}
 		}
 			
 		my @ModelRemianingLeaves = keys(%ModelCladeGenomesHash);
@@ -733,7 +785,6 @@ sub RandomModelPoissonOptimised($$$$$) {
     my $PointTree = Supfam::PointTree->new;
     $PointTree->build(\@Points);
   	#Create the PointTree
-	
 	
 	my $TotalBranchLength = $TreeCacheHash->{$root}{'Total_branch_lengths'};
 	my $Expected_deletions = $deletion_rate*$TotalBranchLength; #$Expected_deletions is the mean of a poisson process used to model deletions
