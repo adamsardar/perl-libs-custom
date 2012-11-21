@@ -55,7 +55,9 @@ B<Data::Dumper> Used for debug output.
 =cut
 use Data::Dumper; #Allow easy print dumps of datastructures for debugging
 use Carp;
-use List::Util;
+use Carp::Assert;
+use Carp::Assert::More;
+use List::Util qw(max);
 use POSIX ('ceil');
 use Math::Random ('random_uniform');
 
@@ -68,6 +70,8 @@ my %fields = (
     NPOINTS       => 0,
     DELPOINTS => [],
     NUMBEROFDELPOINTS => 0,
+    UNIFORMPOOL => [],
+    SIZEOFUNIFORMPOOL => 0,
 );
 
 
@@ -137,6 +141,7 @@ sub build {
 	$self->NPOINTS(scalar(@$Intervals));
 	$self->LOCK(1);
 	$self->DELPOINTS([]);
+	$self->UNIFORMPOOL([]);
 	
 	return 1;
 }
@@ -280,11 +285,11 @@ sub UniformAssign{
 	my $self = shift;
     my $NumberOfPoints = shift;
     
-    my $UniformDeletions = [];
-    @$UniformDeletions = random_uniform($NumberOfPoints,0,1);
- 
+    my $UniformDeletions = [];	
+ 	$self->UniformPoolDraw($UniformDeletions,$NumberOfPoints);
+ 	
 	my $DeletionPoints = $self->DELPOINTS;
-	$self->NUMBEROFDELPOINTS($NumberOfPoints);
+	$self->NUMBEROFDELPOINTS($NumberOfPoints) if($self->NUMBEROFDELPOINTS < $NumberOfPoints);
 
 	$self->Search($UniformDeletions,$DeletionPoints);#Find the node directly below the deletion
 }
@@ -299,17 +304,16 @@ sub UniformDraw{
     my $NumberOfDraws = shift;
 	my $ReturnedDelPointsArray = shift;
 
-    
     my $DelPointsArray = $self->{'DELPOINTS'};
     #Just to avoid AUTOLOAD and its speed drop. This is bad, bad, bad coding form. But perl is shite for OO, so what are you gonna do?
-    $self->UniformAssign($self->NUMBEROFDELPOINTS) if(scalar(@$DelPointsArray) < $NumberOfDraws);
+
+    $self->UniformAssign(max($self->NUMBEROFDELPOINTS,$NumberOfDraws)) if(scalar(@$DelPointsArray) < $NumberOfDraws);
 
 	my $count = 0;
 	
-	while ($count < $NumberOfDraws){
+	while ($count++ < $NumberOfDraws){
 		
-		push(@$ReturnedDelPointsArray,pop($DelPointsArray));	
-		$count++;
+		push(@$ReturnedDelPointsArray,pop($DelPointsArray));
 	}
 
 }
@@ -317,6 +321,77 @@ sub UniformDraw{
 =item * UniformDraw
 Pull a whole load of uniform dleetions from a pre-stored pool, then map them back to the tree.
 =cut
+
+
+sub UniformPoolAssign{
+	
+	my $self = shift;
+    my $NumberOfDraws = shift;
+    assert_positive_integer($NumberOfDraws); 
+    
+    my $UniformDeletions = $self->UNIFORMPOOL;
+    
+    $self->SIZEOFUNIFORMPOOL($NumberOfDraws) if($self->SIZEOFUNIFORMPOOL < $NumberOfDraws);
+    #Since perl is a memory hog, we might as well ensure that we have as many elements in our pool as perl has hogged memory for
+       
+    $NumberOfDraws = $self->SIZEOFUNIFORMPOOL;
+   
+    my @UniformTempPool = random_uniform($NumberOfDraws,0,1);
+    my $counter = 0;
+    while($counter++ < $NumberOfDraws){
+    	
+    	push(@$UniformDeletions,pop(@UniformTempPool));
+    }
+}
+
+=item * UniformPoolAssign
+
+Make a pool of uniform random numbers from 0 to 1. Also assigning a variable to the object that dictates the size of the pool
+
+=cut
+
+sub UniformPoolDraw{
+	
+	my $self = shift;
+    my $NumberOfArgs = scalar(@_);
+	
+    my $UniformPoolArray = $self->{'UNIFORMPOOL'};
+    #Just to avoid AUTOLOAD and its speed drop. This is bad, bad, bad coding form. But perl is shite for OO, so what are you gonna do? Maybe I'll migrate this module into Mouse as some stage. We shall see ...
+    
+	if($NumberOfArgs == 2){
+		
+		my $ReturnedUniformArray = shift;
+		assert_listref($ReturnedUniformArray);
+		my $NumberOfDraws = shift;
+		assert_positive_integer($NumberOfDraws);
+				
+		$self->UniformPoolAssign(max($self->SIZEOFUNIFORMPOOL,ceil(1.2*$NumberOfDraws))) if(scalar(@$UniformPoolArray) <= $NumberOfDraws);
+		#Chuck a whole load more uniform values into the pool if it isn't big enough for what we need it for
+
+		my $count = 0;
+		while ($count++ < $NumberOfDraws){
+			
+			push(@$ReturnedUniformArray,pop(@$UniformPoolArray));	
+		}
+
+	}elsif($NumberOfArgs == 0){
+		
+		$self->UniformPoolAssign(max($self->SIZEOFUNIFORMPOOL,20)) if(scalar(@$UniformPoolArray) <= 1);
+		return(pop(@$UniformPoolArray));
+		
+	}else{
+		
+		carp "UniformPoolDraw takes either two or no arguments\n";
+	}
+}
+
+=item * UniformDraw
+
+Pull a whole load of uniform dleetions from a pre-stored pool. There are two ways this method can be called. Either with no arguments, in which case a single value will be drawn and returned,
+or a number of values can be requested, with a destination arrayref being provided. This will be filled
+
+=cut
+
 
 sub Point_Search_Iteratively{
    
