@@ -245,11 +245,6 @@ sub DeletedSimAnneal{
 	my ($MRCA,$dels,$time,$HashOfGenomesObserved,$TreeCacheHash,$treeroot,$DomArch,$CladeSize,$opt_iterations,$HGTpercentage,$model,$NoGenomesObserved) = @_;
 	#$time in this function is evolutionary time and $dels are the number of observed deletions in that time
 	
-
-	#s ← s0; e ← E(s)                                  // Initial state, energy.
-	#sbest ← s; ebest ← e                              // Initial "best" solution
-	#k ← 0                                             // Energy evaluation count.
-
 	my $SimIterations = 100;
 	
 	my $lambda_original = $dels/$time;
@@ -649,7 +644,15 @@ sub HGTTreeDeletionModelOptimised {
 							
 					}else{
 						
-						$ModelCladeGenomesHash{$HGTBranch} =1;
+						if(exists($ModelCladeGenomesHash{$HGTBranch})){
+							
+							$NumberOfGenomesWithHGTUndiscernable++;
+							
+						}else{
+							
+							$NumberOfGenomesWithHGTDiscernable++;
+							$ModelCladeGenomesHash{$HGTBranch} =1;
+						}
 						#If the architecture has been transfered into a leaf node, set it as existing in %ModelCladeGenomesHash. Note that it could have already existed in 
 					}
 									
@@ -667,7 +670,7 @@ sub HGTTreeDeletionModelOptimised {
 			}
 		
 			my $DetailedRawResultsString = join(":",(scalar(keys(%ModelCladeGenomesHash)),$NumberOfGenomesWithHGTUndiscernable,$NumberOfGenomesWithHGTDiscernable));
-			push(@$DetailedRawResults,$DetailedRawResults);
+			push(@$DetailedRawResults,$DetailedRawResultsString);
 		}
 			
 		my @ModelRemianingLeaves = keys(%ModelCladeGenomesHash);
